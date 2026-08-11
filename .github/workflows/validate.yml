@@ -129,22 +129,70 @@ jobs:
             }
             Write-Host "Simulator phase: capture TLS certificate"
             $CaPath = "$env:RUNNER_TEMP\vcsim-ca.pem"
-            $CertificateError = "$env:RUNNER_TEMP\vcsim-cert.stderr.log"
-            $CertificateProcess = Start-Process -FilePath "govc.exe" `
-              -ArgumentList @("about.cert", "-k", "-show") `
-              -RedirectStandardOutput $CaPath `
-              -RedirectStandardError $CertificateError `
-              -PassThru
-            if (-not $CertificateProcess.WaitForExit(60000)) {
-              Stop-Process -Id $CertificateProcess.Id -Force -ErrorAction SilentlyContinue
-              throw "TLS certificate capture timed out."
+            $CertificateTcp = New-Object System.Net.Sockets.TcpClient
+            $CertificateStream = $null
+            $RemoteCertificate = $null
+            $ConnectResult = $null
+            $HandshakeResult = $null
+            try {
+              $ConnectResult = $CertificateTcp.BeginConnect(
+                "127.0.0.1",
+                8998,
+                $null,
+                $null
+              )
+              if (-not $ConnectResult.AsyncWaitHandle.WaitOne(5000)) {
+                throw "TLS certificate connection timed out after 5 seconds."
+              }
+              $CertificateTcp.EndConnect($ConnectResult)
+              $AcceptSimulatorCertificate = {
+                param($Sender, $Certificate, $Chain, $SslPolicyErrors)
+                return $true
+              } -as [System.Net.Security.RemoteCertificateValidationCallback]
+              $CertificateStream = New-Object `
+                -TypeName System.Net.Security.SslStream `
+                -ArgumentList @(
+                  $CertificateTcp.GetStream(),
+                  $false,
+                  $AcceptSimulatorCertificate
+              )
+              $CertificateStream.ReadTimeout = 10000
+              $CertificateStream.WriteTimeout = 10000
+              $HandshakeResult = $CertificateStream.BeginAuthenticateAsClient(
+                "127.0.0.1",
+                $null,
+                $null
+              )
+              if (-not $HandshakeResult.AsyncWaitHandle.WaitOne(15000)) {
+                throw "TLS handshake timed out after 15 seconds."
+              }
+              $CertificateStream.EndAuthenticateAsClient($HandshakeResult)
+              $RemoteCertificate = New-Object `
+                -TypeName System.Security.Cryptography.X509Certificates.X509Certificate2 `
+                -ArgumentList @(
+                  $CertificateStream.RemoteCertificate
+                )
+              $CertificateBytes = $RemoteCertificate.Export(
+                [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert
+              )
+              $CertificateBase64 = [Convert]::ToBase64String(
+                $CertificateBytes,
+                [System.Base64FormattingOptions]::InsertLineBreaks
+              )
+              $CertificatePem = "-----BEGIN CERTIFICATE-----`r`n" +
+                $CertificateBase64 + "`r`n-----END CERTIFICATE-----`r`n"
+              [System.IO.File]::WriteAllText(
+                $CaPath,
+                $CertificatePem,
+                [System.Text.Encoding]::ASCII
+              )
             }
-            $CertificateProcess.WaitForExit()
-            if ($CertificateProcess.ExitCode -ne 0 -or
-                -not (Test-Path -LiteralPath $CaPath) -or
-                (Get-Item -LiteralPath $CaPath).Length -eq 0) {
-              Get-Content -LiteralPath $CertificateError -ErrorAction SilentlyContinue
-              throw "Could not read the vcsim TLS certificate."
+            finally {
+              if ($RemoteCertificate) { $RemoteCertificate.Dispose() }
+              if ($CertificateStream) { $CertificateStream.Dispose() }
+              $CertificateTcp.Dispose()
+              if ($HandshakeResult) { $HandshakeResult.AsyncWaitHandle.Close() }
+              if ($ConnectResult) { $ConnectResult.AsyncWaitHandle.Close() }
             }
 
             Remove-Item Env:GOVC_URL -ErrorAction SilentlyContinue

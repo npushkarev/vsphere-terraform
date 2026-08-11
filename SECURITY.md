@@ -7,6 +7,10 @@
   datastore, network и template.
 - Все изменения выполняйте только через saved plan после ручного review.
 - При предложении `delete` или `replace` остановитесь и разберите причину.
+- Не клонируйте Windows в production network без Sysprep: provider сам включает
+  target, что создаёт конфликт hostname/IP/SID.
+- Не передавайте Windows administrator, domain join или product-key секреты в
+  Terraform: sensitive-значения всё равно сохраняются в state/plan.
 - Утечка секрета требует немедленной ротации; удаления секрета из последнего
   коммита недостаточно, потому что он остаётся в Git history.
 

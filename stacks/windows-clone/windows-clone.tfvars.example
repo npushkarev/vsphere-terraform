@@ -1,0 +1,32 @@
+datacenter_name = "INC"
+source_vm_name  = "tst-win-10-12"
+
+cluster_name   = "REPLACE_WITH_CLUSTER"
+datastore_name = "REPLACE_WITH_DATASTORE"
+network_name   = "REPLACE_WITH_TARGET_NETWORK"
+vm_folder      = "Terraform"
+
+target_vm_name      = "tst-win-10-clone-01"
+target_computer_name = "tst-win10-c01"
+workgroup             = "WORKGROUP"
+
+# Provider default 85 is UTC. Replace with your approved Microsoft Sysprep code.
+sysprep_time_zone = 85
+
+# DHCP is the safe default because the clone receives a new virtual MAC address.
+guest_network = {}
+
+# For a static address, reserve it in IPAM first, then replace guest_network:
+# guest_network = {
+#   ipv4_address       = "192.0.2.20"
+#   ipv4_netmask       = 24
+#   ipv4_gateway       = "192.0.2.1"
+#   dns_servers        = ["192.0.2.53"]
+#   dns_domain         = "inc.elara.local"
+#   static_ip_reserved = true
+# }
+
+# Leave empty until tst-win-10-12 is really powered off in vCenter.
+source_powered_off_acknowledgement = ""
+# Then set exactly:
+# source_powered_off_acknowledgement = "tst-win-10-12 is powered off"

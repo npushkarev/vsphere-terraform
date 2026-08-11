@@ -41,6 +41,7 @@ cp "$project_dir/scripts/install-offline.sh" "$stage/"
 cp "$project_dir/.terraform-version" "$stage/"
 cp "$project_dir/stacks/inventory/.terraform.lock.hcl" "$stage/lockfiles/inventory.lock.hcl"
 cp "$project_dir/stacks/vm-clones/.terraform.lock.hcl" "$stage/lockfiles/vm-clones.lock.hcl"
+cp "$project_dir/stacks/windows-clone/.terraform.lock.hcl" "$stage/lockfiles/windows-clone.lock.hcl"
 
 gpg_home="$stage/.verification-gnupg"
 mkdir -m 700 "$gpg_home"

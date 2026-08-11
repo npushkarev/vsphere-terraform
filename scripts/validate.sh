@@ -13,23 +13,34 @@ export VSPHERE_USER VSPHERE_PASSWORD VSPHERE_SERVER
 for script_file in "$project_dir"/scripts/*.sh; do
   sh -n "$script_file"
 done
+"$project_dir/scripts/test-plan-policy.sh"
 
 "$tf_bin" -chdir="$project_dir" fmt -check -recursive
 
-for stack in inventory vm-clones; do
+for stack in inventory vm-clones windows-clone; do
   "$tf_bin" -chdir="$project_dir/stacks/$stack" init \
     -backend=false -lockfile=readonly -input=false
   "$tf_bin" -chdir="$project_dir/stacks/$stack" validate
 done
 
+"$tf_bin" -chdir="$project_dir/stacks/windows-clone" test
+
 for versions_file in \
   "$project_dir/stacks/inventory/versions.tf" \
   "$project_dir/stacks/vm-clones/versions.tf" \
+  "$project_dir/stacks/windows-clone/versions.tf" \
   "$project_dir/modules/linux-vm-clone/versions.tf"; do
   grep -F 'source  = "vmware/vsphere"' "$versions_file" >/dev/null
   grep -F 'version = "= 2.15.1"' "$versions_file" >/dev/null
 done
 grep -F 'prevent_destroy = true' \
   "$project_dir/modules/linux-vm-clone/main.tf" >/dev/null
+grep -F 'prevent_destroy = true' \
+  "$project_dir/stacks/windows-clone/main.tf" >/dev/null
+if grep -E 'admin_password|domain_admin_password|product_key|windows_sysprep_text' \
+  "$project_dir"/stacks/windows-clone/*.tf >/dev/null; then
+  echo "Windows clone stack must not contain guest secrets" >&2
+  exit 1
+fi
 
 echo "all validation checks passed"

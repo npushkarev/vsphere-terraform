@@ -1,7 +1,8 @@
 # Terraform для vSphere 7.0.3
 
 Репозиторий устанавливает проверенный Terraform CLI и позволяет безопасно читать
-инвентарь vCenter или создавать Linux VM клонированием из шаблона.
+инвентарь vCenter, создавать Linux VM из шаблона и клонировать Windows 10 из
+существующей выключенной VM.
 
 Terraform запускается с рабочей станции, dev-VM или CI и обращается к vCenter по
 HTTPS API. Ничего устанавливать внутрь vCenter не нужно.
@@ -24,6 +25,7 @@ Provider зафиксирован строго на `2.15.1`: это после�
 
 - `stacks/inventory` — только data sources, не содержит managed resources.
 - `stacks/vm-clones` — opt-in создание Linux VM из шаблона.
+- `stacks/windows-clone` — один full clone Windows VM с Sysprep.
 - `modules/linux-vm-clone` — модуль клонирования с `prevent_destroy = true`.
 - `scripts` — установка, проверка, plan/apply и offline bundle.
 
@@ -104,7 +106,7 @@ Windows-эквивалент:
 Скрипт проверяет JSON plan и завершится ошибкой, если в inventory появится хотя
 бы одно управляемое изменение.
 
-## 4. Создание VM
+## 4. Создание Linux VM
 
 1. Скопируйте `stacks/vm-clones/vm-clones.tfvars.example` за пределы Git или в
    игнорируемый `.tfvars`.
@@ -139,6 +141,34 @@ $env:ALLOW_VM_APPLY = "yes"
 
 Любое действие `delete` блокируется wrapper-скриптами, а VM защищены
 `prevent_destroy = true`. Цели `destroy` в Makefile нет.
+
+## 5. Клон Windows 10 `tst-win-10-12`
+
+На последней фотографии target VM называется `tst-win-10-12`. Terraform может
+использовать обычную VM как источник; импортировать или превращать её в template
+не нужно.
+
+Безопасный workflow делает full clone и запускает Windows Sysprep: target получает
+новый SID, уникальное computer name и DHCP либо зарезервированный статический IP.
+Источник должен быть выключен. Inline domain/admin passwords намеренно не
+поддерживаются, потому что они попали бы в Terraform state.
+
+```sh
+cp stacks/windows-clone/windows-clone.tfvars.example \
+  /private/path/windows-clone.tfvars
+./scripts/plan.sh windows-clone /private/path/windows-clone.tfvars
+```
+
+После проверки сохранённого plan:
+
+```sh
+ALLOW_WINDOWS_CLONE_APPLY=yes ./scripts/apply-reviewed-plan.sh \
+  /absolute/path/to/saved.tfplan
+```
+
+Wrapper принимает только no-op или ровно один create Windows-клона. Полная
+подготовка source, tfvars, Windows-команды и проверки после apply описаны в
+[docs/windows-clone.md](docs/windows-clone.md).
 
 ## Существующие VM и state
 

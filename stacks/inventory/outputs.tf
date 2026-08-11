@@ -31,7 +31,6 @@ output "virtual_machines" {
       id                 = vm.id
       uuid               = vm.uuid
       guest_id           = vm.guest_id
-      power_state        = vm.power_state
       default_ip_address = vm.default_ip_address
     }
   }

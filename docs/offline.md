@@ -45,6 +45,8 @@ terraform -chdir=stacks/inventory init -backend=false -lockfile=readonly
 terraform -chdir=stacks/inventory validate
 terraform -chdir=stacks/vm-clones init -backend=false -lockfile=readonly
 terraform -chdir=stacks/vm-clones validate
+terraform -chdir=stacks/windows-clone init -backend=false -lockfile=readonly
+terraform -chdir=stacks/windows-clone validate
 ```
 
 Provider binaries не коммитятся в Git. Lock-файлы коммитятся и проверяют

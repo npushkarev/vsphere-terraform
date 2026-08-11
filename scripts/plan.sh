@@ -10,8 +10,8 @@ stack=${1:-}
 var_file=${2:-}
 
 case "$stack" in
-  inventory|vm-clones) ;;
-  *) echo "usage: $0 inventory|vm-clones [/absolute/path/file.tfvars]" >&2; exit 2 ;;
+  inventory|vm-clones|windows-clone) ;;
+  *) echo "usage: $0 inventory|vm-clones|windows-clone [/absolute/path/file.tfvars]" >&2; exit 2 ;;
 esac
 
 [ -n "${VSPHERE_SERVER:-}" ] || {
@@ -71,10 +71,16 @@ if [ "$stack" = inventory ]; then
     echo "inventory plan contains a managed-resource change; refusing" >&2
     exit 1
   fi
-else
+elif [ "$stack" = vm-clones ]; then
   if jq -e 'any(.resource_changes[]?;
     (.change.actions | index("delete")) != null)' "$plan_json" >/dev/null; then
     echo "VM plan contains delete/replace; refusing" >&2
+    exit 1
+  fi
+else
+  if ! jq -e -f "$script_dir/windows-clone-plan-policy.jq" \
+    "$plan_json" >/dev/null; then
+    echo "Windows clone plan must be no-op or exactly one create; refusing" >&2
     exit 1
   fi
 fi

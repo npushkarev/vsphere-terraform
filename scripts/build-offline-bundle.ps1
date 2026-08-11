@@ -32,6 +32,8 @@ Copy-Item -LiteralPath (Join-Path $ProjectDir "stacks\inventory\.terraform.lock.
     -Destination (Join-Path $Stage "lockfiles\inventory.lock.hcl")
 Copy-Item -LiteralPath (Join-Path $ProjectDir "stacks\vm-clones\.terraform.lock.hcl") `
     -Destination (Join-Path $Stage "lockfiles\vm-clones.lock.hcl")
+Copy-Item -LiteralPath (Join-Path $ProjectDir "stacks\windows-clone\.terraform.lock.hcl") `
+    -Destination (Join-Path $Stage "lockfiles\windows-clone.lock.hcl")
 
 $TerraformArguments = @(
     "-chdir=$(Join-Path $ProjectDir 'stacks\inventory')",

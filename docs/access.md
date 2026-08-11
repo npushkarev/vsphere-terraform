@@ -13,6 +13,11 @@ Terraform использует vSphere API. Машина запуска долж
 `StorageProfile.View` и `VirtualMachine.Config.SwapPlacement`. Не выдавайте
 глобального Administrator только ради устранения ошибки permission denied.
 
+Для Windows full clone дополнительно нужны как минимум права clone/customize на
+source, создание VM в target folder, назначение resource pool, выделение места
+на datastore, назначение network и power-on target. Scope этих прав ограничьте
+`tst-win-10-12` и конкретными target-объектами.
+
 Переменные окружения:
 
 - `VSPHERE_SERVER`

@@ -20,11 +20,13 @@ function Invoke-Terraform {
 }
 
 Invoke-Terraform -Arguments @("-chdir=$ProjectDir", "fmt", "-check", "-recursive")
-foreach ($Stack in @("inventory", "vm-clones")) {
+foreach ($Stack in @("inventory", "vm-clones", "windows-clone")) {
     $StackDir = Join-Path $ProjectDir "stacks\$Stack"
     Invoke-Terraform -Arguments @("-chdir=$StackDir", "init", "-backend=false", "-lockfile=readonly", "-input=false")
     Invoke-Terraform -Arguments @("-chdir=$StackDir", "validate")
 }
+
+Invoke-Terraform -Arguments @("-chdir=$(Join-Path $ProjectDir 'stacks\windows-clone')", "test")
 
 foreach ($PowerShellFile in Get-ChildItem -LiteralPath (Join-Path $ProjectDir "scripts") -Filter "*.ps1" -File) {
     $Tokens = $null
@@ -42,6 +44,7 @@ foreach ($PowerShellFile in Get-ChildItem -LiteralPath (Join-Path $ProjectDir "s
 foreach ($VersionsFile in @(
         (Join-Path $ProjectDir "stacks\inventory\versions.tf"),
         (Join-Path $ProjectDir "stacks\vm-clones\versions.tf"),
+        (Join-Path $ProjectDir "stacks\windows-clone\versions.tf"),
         (Join-Path $ProjectDir "modules\linux-vm-clone\versions.tf")
     )) {
     $Versions = Get-Content -LiteralPath $VersionsFile -Raw
@@ -51,5 +54,10 @@ foreach ($VersionsFile in @(
 
 $ModuleMain = Get-Content -LiteralPath (Join-Path $ProjectDir "modules\linux-vm-clone\main.tf") -Raw
 if ($ModuleMain -notmatch 'prevent_destroy\s+=\s+true') { throw "prevent_destroy is missing." }
+$WindowsMain = Get-Content -LiteralPath (Join-Path $ProjectDir "stacks\windows-clone\main.tf") -Raw
+if ($WindowsMain -notmatch 'prevent_destroy\s+=\s+true') { throw "Windows prevent_destroy is missing." }
+if ($WindowsMain -match 'admin_password|domain_admin_password|product_key|windows_sysprep_text') {
+    throw "Windows clone stack must not contain guest secrets."
+}
 
 Write-Host "All validation checks passed."

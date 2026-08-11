@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("inventory", "vm-clones")]
+    [ValidateSet("inventory", "vm-clones", "windows-clone")]
     [string]$Stack,
     [string]$VarFile,
     [string]$Terraform = "terraform"
@@ -63,9 +63,22 @@ try {
         })
         if ($ManagedChanges.Count -gt 0) { throw "Inventory plan contains a managed-resource change; refusing." }
     }
-    else {
+    elseif ($Stack -eq "vm-clones") {
         $DeleteChanges = @($Changes | Where-Object { @($_.change.actions) -contains "delete" })
         if ($DeleteChanges.Count -gt 0) { throw "VM plan contains delete/replace; refusing." }
+    }
+    else {
+        $ManagedChanges = @($Changes | Where-Object {
+            $Actions = @($_.change.actions)
+            $_.mode -eq "managed" -and -not ($Actions.Count -eq 1 -and $Actions[0] -ceq "no-op")
+        })
+        $SafeCreate = $ManagedChanges.Count -eq 1 -and `
+            $ManagedChanges[0].address -ceq "vsphere_virtual_machine.clone" -and `
+            @($ManagedChanges[0].change.actions).Count -eq 1 -and `
+            @($ManagedChanges[0].change.actions)[0] -ceq "create"
+        if ($ManagedChanges.Count -gt 0 -and -not $SafeCreate) {
+            throw "Windows clone plan must be no-op or exactly one create; refusing."
+        }
     }
 
     Write-Host "Saved reviewed-plan candidate: $PlanFile"

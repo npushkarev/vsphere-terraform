@@ -350,6 +350,42 @@ try {
             }
         }
 
+        function Invoke-GovcCollectEachIfPresent {
+            param(
+                [string]$FileName,
+                [string]$InventoryType,
+                [string[]]$Properties
+            )
+            $Prefix = "$InventoryType`:"
+            $Refs = @($ObjectEntries | Where-Object {
+                    $_.StartsWith($Prefix, [StringComparison]::Ordinal)
+                } | ForEach-Object {
+                    ($_ -split "`t", 2)[0]
+                })
+            $OutputPath = Join-Path $RawDirectory $FileName
+            [System.IO.File]::WriteAllText($OutputPath, "", $Utf8NoBom)
+            for ($RefIndex = 0; $RefIndex -lt $Refs.Count; $RefIndex++) {
+                Write-Host "Discovery phase: $FileName ($($RefIndex + 1)/$($Refs.Count))"
+                $ChangeSetJson = Invoke-NativeCapture -Executable $GovcPath -CommandArguments @(
+                    @("object.collect", "-json", "-n=0", $Refs[$RefIndex]) + $Properties
+                ) -Environment $GovcEnvironment -PassThru `
+                    -Label "read-only govc object.collect for $FileName"
+                $ChangeSet = @($ChangeSetJson | ConvertFrom-Json)
+                $SeparatorIndex = $Refs[$RefIndex].IndexOf(":", [StringComparison]::Ordinal)
+                if ($SeparatorIndex -le 0) { throw "Invalid inventory reference for $FileName." }
+                $Record = [ordered]@{
+                    kind      = "enter"
+                    obj       = [ordered]@{
+                        type  = $Refs[$RefIndex].Substring(0, $SeparatorIndex)
+                        value = $Refs[$RefIndex].Substring($SeparatorIndex + 1)
+                    }
+                    changeSet = $ChangeSet
+                } | ConvertTo-Json -Depth 20 -Compress
+                $Record += "`n"
+                [System.IO.File]::AppendAllText($OutputPath, $Record, $Utf8NoBom)
+            }
+        }
+
         Invoke-GovcCollectIfPresent -FileName "datacenters.jsonseq" `
             -InventoryType "Datacenter" -CommandType "d" `
             -Properties @("name", "parent", "overallStatus")
@@ -382,8 +418,8 @@ try {
                 "name", "parent", "overallStatus", "summary.type", "summary.capacity", "summary.freeSpace",
                 "summary.accessible", "summary.maintenanceMode"
             )
-        Invoke-GovcCollectIfPresent -FileName "storage-pods.jsonseq" `
-            -InventoryType "StoragePod" -CommandType "StoragePod" `
+        Invoke-GovcCollectEachIfPresent -FileName "storage-pods.jsonseq" `
+            -InventoryType "StoragePod" `
             -Properties @("name", "parent", "overallStatus")
         Invoke-GovcCollectIfPresent -FileName "distributed-switches.jsonseq" `
             -InventoryType "DistributedVirtualSwitch" -CommandType "w" `

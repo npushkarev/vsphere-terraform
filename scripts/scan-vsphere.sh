@@ -228,6 +228,35 @@ else
     fi
   }
 
+  collect_each_if_present() {
+    output_file=$1
+    inventory_type=$2
+    shift 2
+    : > "$raw_dir/$output_file"
+    refs=$(
+      "$jq_bin" -r --arg prefix "$inventory_type:" \
+        '.[] | select(startswith($prefix)) | split("\t")[0]' \
+        "$raw_dir/objects.json"
+    )
+    for ref in $refs; do
+      run_govc object.collect -json -n=0 "$ref" "$@" \
+        | "$jq_bin" -ce --arg ref "$ref" '
+            if type != "array" then
+              error("direct object.collect did not return a changeSet array")
+            else
+              ($ref | capture("^(?<type>[^:]+):(?<value>.+)$")) as $parsed |
+              {
+                kind: "enter",
+                obj: {type: $parsed.type, value: $parsed.value},
+                changeSet: .
+              }
+            end
+          ' \
+        >> "$raw_dir/$output_file"
+    done
+    unset refs ref
+  }
+
   collect_if_present datacenters.jsonseq Datacenter d \
     name parent overallStatus
   collect_if_present clusters.jsonseq ClusterComputeResource c \
@@ -246,7 +275,7 @@ else
   collect_if_present datastores.jsonseq Datastore s \
     name parent overallStatus summary.type summary.capacity summary.freeSpace \
     summary.accessible summary.maintenanceMode
-  collect_if_present storage-pods.jsonseq StoragePod StoragePod \
+  collect_each_if_present storage-pods.jsonseq StoragePod \
     name parent overallStatus
   collect_if_present distributed-switches.jsonseq DistributedVirtualSwitch w \
     name parent overallStatus

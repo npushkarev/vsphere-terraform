@@ -1,0 +1,27 @@
+datacenter_name = "INC"
+cluster_name    = "REPLACE_WITH_CLUSTER"
+datastore_name  = "REPLACE_WITH_DATASTORE"
+network_name    = "REPLACE_WITH_NETWORK"
+template_name   = "Templates/REPLACE_WITH_LINUX_TEMPLATE"
+vm_folder       = "Terraform"
+
+# Empty means no VM is managed or created.
+virtual_machines = {}
+
+# Example (uncomment only after replacing every value):
+# virtual_machines = {
+#   dev-astra-tf-01 = {
+#     name              = "dev-astra-tf-01"
+#     num_cpus          = 4
+#     memory_mb         = 8192
+#     root_disk_size_gb = 80
+#     customization = {
+#       hostname     = "dev-astra-tf-01"
+#       domain       = "inc.elara.local"
+#       ipv4_address = "192.0.2.10"
+#       ipv4_netmask = 24
+#       ipv4_gateway = "192.0.2.1"
+#       dns_servers  = ["192.0.2.53"]
+#     }
+#   }
+# }

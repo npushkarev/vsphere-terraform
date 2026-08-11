@@ -1,0 +1,153 @@
+# Terraform для vSphere 7.0.3
+
+Репозиторий устанавливает проверенный Terraform CLI и позволяет безопасно читать
+инвентарь vCenter или создавать Linux VM клонированием из шаблона.
+
+Terraform запускается с рабочей станции, dev-VM или CI и обращается к vCenter по
+HTTPS API. Ничего устанавливать внутрь vCenter не нужно.
+
+## Зафиксированные версии
+
+- Terraform CLI: `1.15.8`.
+- Provider: `vmware/vsphere = 2.15.1`.
+- vCenter из текущего окружения: `incvc.inc.elara.local`.
+
+Provider зафиксирован строго на `2.15.1`: это последний релиз, документация
+которого перечисляет vSphere 7.x. Не запускайте `terraform init -upgrade` до
+обновления vSphere.
+
+> [vSphere 7 вышел из General Support 2 октября 2025 года](https://knowledge.broadcom.com/external/article/415405/end-of-general-support-for-vsphere.html).
+> Этот репозиторий сохраняет совместимую связку версий, но обновление платформы
+> до vSphere 8+ всё равно нужно запланировать.
+
+## Структура
+
+- `stacks/inventory` — только data sources, не содержит managed resources.
+- `stacks/vm-clones` — opt-in создание Linux VM из шаблона.
+- `modules/linux-vm-clone` — модуль клонирования с `prevent_destroy = true`.
+- `scripts` — установка, проверка, plan/apply и offline bundle.
+
+## 1. Установка Terraform
+
+Сначала клонируйте приватный репозиторий и перейдите в него:
+
+```sh
+gh repo clone npushkarev/vsphere-terraform
+cd vsphere-terraform
+```
+
+Debian Linux x64:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl unzip gnupg jq make
+make install
+export PATH="$HOME/.local/bin:$PATH"
+terraform version
+```
+
+Windows x64, обычный PowerShell — WSL не нужен:
+
+```powershell
+.\scripts\install-terraform.ps1 -AddToUserPath
+terraform version
+```
+
+Linux-установщик принимает `--bin-dir`, не вызывает `sudo`, проверяет
+PGP-подпись HashiCorp, fingerprint ключа и SHA-256. Windows-установщик проверяет
+жёстко зафиксированный SHA-256 официального x64 archive.
+
+## 2. Учётная запись vCenter
+
+Для inventory используйте отдельную Read Only учётку. Для создания VM создайте
+вторую service account с правами только на нужные folder, resource pool,
+datastore, network и template. Подробности: [docs/access.md](docs/access.md).
+
+Секреты задаются только на время работы. Debian/Bash:
+
+```bash
+export VSPHERE_SERVER='incvc.inc.elara.local'
+export VSPHERE_USER='<service-account>'
+read -r -s -p 'Пароль vCenter: ' VSPHERE_PASSWORD
+export VSPHERE_PASSWORD
+printf '\n'
+```
+
+Windows PowerShell (пароль не печатается и не сохраняется в репозитории):
+
+```powershell
+$env:VSPHERE_SERVER = "incvc.inc.elara.local"
+$Credential = Get-Credential -UserName "<service-account>" -Message "vCenter credentials"
+$env:VSPHERE_USER = $Credential.UserName
+$env:VSPHERE_PASSWORD = $Credential.GetNetworkCredential().Password
+```
+
+TLS-проверка включена принудительно. Установите корпоративный CA в trust store
+машины, с которой запускается Terraform.
+
+## 3. Безопасная проверка подключения
+
+По умолчанию inventory ищет datacenter `INC`. Остальные объекты необязательны.
+
+```sh
+cp stacks/inventory/inventory.tfvars.example /private/path/inventory.tfvars
+terraform -chdir=stacks/inventory init
+./scripts/plan.sh inventory /private/path/inventory.tfvars
+```
+
+Windows-эквивалент:
+
+```powershell
+.\scripts\plan.ps1 -Stack inventory -VarFile C:\private\inventory.tfvars
+```
+
+Скрипт проверяет JSON plan и завершится ошибкой, если в inventory появится хотя
+бы одно управляемое изменение.
+
+## 4. Создание VM
+
+1. Скопируйте `stacks/vm-clones/vm-clones.tfvars.example` за пределы Git или в
+   игнорируемый `.tfvars`.
+2. Укажите реальные cluster, datastore, network, template и folder.
+3. Оставьте `virtual_machines = {}` и сначала проверьте доступ к инвентарю.
+4. Добавьте VM в map и создайте сохранённый plan.
+
+```sh
+terraform -chdir=stacks/vm-clones init
+./scripts/plan.sh vm-clones /private/path/vm-clones.tfvars
+```
+
+Скрипт напечатает путь сохранённого `.tfplan`. Внимательно просмотрите его:
+
+```sh
+terraform -chdir=stacks/vm-clones show /absolute/path/to/saved.tfplan
+```
+
+Применение разрешено только из сохранённого plan и только с явным флагом:
+
+```sh
+ALLOW_VM_APPLY=yes ./scripts/apply-reviewed-plan.sh \
+  /absolute/path/to/saved.tfplan
+```
+
+Windows:
+
+```powershell
+$env:ALLOW_VM_APPLY = "yes"
+.\scripts\apply-reviewed-plan.ps1 -Plan C:\absolute\path\to\saved.tfplan
+```
+
+Любое действие `delete` блокируется wrapper-скриптами, а VM защищены
+`prevent_destroy = true`. Цели `destroy` в Makefile нет.
+
+## Существующие VM и state
+
+Существующую VM сначала описывают в конфигурации, затем импортируют и доводят
+plan до отсутствия неожиданных изменений. См. [docs/import.md](docs/import.md).
+
+Перед первым рабочим `apply` настройте командный remote backend с TLS,
+шифрованием, versioning и locking: [docs/state.md](docs/state.md). Локальные
+state и plan-файлы игнорируются Git, но всё равно содержат чувствительные данные.
+
+Для Astra/TeamCity без интернета используйте
+[docs/offline.md](docs/offline.md).

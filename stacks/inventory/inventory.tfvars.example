@@ -1,0 +1,7 @@
+datacenter_name = "INC"
+
+# Заполняйте только нужные read-only запросы.
+cluster_names   = []
+datastore_names = []
+network_names   = []
+vm_paths        = []

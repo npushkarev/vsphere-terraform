@@ -1,0 +1,7 @@
+# Terraform 1.5+ configuration-driven import example.
+# Keep the matching key in virtual_machines before running plan/import.
+#
+# import {
+#   to = module.linux_vm_clone.vsphere_virtual_machine.this["existing-vm"]
+#   id = "/INC/vm/<folder>/<existing-vm>"
+# }

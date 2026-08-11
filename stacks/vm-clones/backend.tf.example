@@ -1,0 +1,4 @@
+terraform {
+  # Address, locking URLs and credentials come from TF_HTTP_* environment vars.
+  backend "http" {}
+}

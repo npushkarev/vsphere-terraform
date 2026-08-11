@@ -149,4 +149,4 @@ install -m 0755 "$tmp_dir/extracted/terraform" "$temporary_target"
 mv -f -- "$temporary_target" "$bin_dir/terraform"
 
 echo "installed Terraform $version to $bin_dir/terraform"
-"$bin_dir/terraform" version
+CHECKPOINT_DISABLE=1 "$bin_dir/terraform" version

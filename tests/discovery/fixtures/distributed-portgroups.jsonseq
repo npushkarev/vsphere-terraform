@@ -1,0 +1,10 @@
+{
+  "kind": "enter",
+  "obj": {"type": "DistributedVirtualPortgroup", "value": "dvportgroup-42"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "Servers VLAN 120"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-n1"}},
+    {"name": "summary.accessible", "op": "assign", "val": true},
+    {"name": "config.distributedVirtualSwitch", "op": "assign", "val": {"type": "DistributedVirtualSwitch", "value": "dvs-41"}}
+  ]
+}

@@ -11,24 +11,159 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Install Terraform
+      - name: Install pinned toolchain
         run: |
           ./scripts/install-terraform.sh --bin-dir "$HOME/.local/bin"
+          ./scripts/install-govc.sh --bin-dir "$HOME/.local/bin"
+          ./scripts/install-jq.sh --bin-dir "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Validate
         run: ./scripts/validate.sh
+      - name: Build and smoke-test offline bundle
+        run: |
+          ./scripts/build-offline-bundle.sh linux_amd64
+          bundle=$(find offline-dist -maxdepth 1 -type f -name '*-linux_amd64.tar.gz' | head -n 1)
+          test -n "$bundle"
+          extract_dir="$RUNNER_TEMP/offline-extract"
+          install_dir="$RUNNER_TEMP/offline-install"
+          mkdir -p "$extract_dir"
+          tar -xzf "$bundle" -C "$extract_dir"
+          bundle_dir=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 ALL_PROXY=http://127.0.0.1:1 \
+            "$bundle_dir/install-offline.sh" --prefix "$install_dir"
+          PATH="$install_dir/bin:$PATH" \
+            "$install_dir/scanner/scan-vsphere.sh" \
+            --fixture-dir "$GITHUB_WORKSPACE/tests/discovery/fixtures" \
+            --output-dir "$RUNNER_TEMP/offline-scan" \
+            --generated-at 2026-08-11T00:00:00Z
+          mkdir -p "$RUNNER_TEMP/offline-stack"
+          cp stacks/inventory/*.tf stacks/inventory/.terraform.lock.hcl "$RUNNER_TEMP/offline-stack/"
+          TF_CLI_CONFIG_FILE="$install_dir/terraform.rc" \
+            "$install_dir/bin/terraform" -chdir="$RUNNER_TEMP/offline-stack" \
+            init -backend=false -lockfile=readonly -input=false
+          "$install_dir/bin/terraform" -chdir="$RUNNER_TEMP/offline-stack" validate
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Install Terraform
+      - name: Require Windows PowerShell 5.1
         shell: powershell
         run: |
-          .\scripts\install-terraform.ps1 -BinDir "$env:RUNNER_TEMP\terraform"
-          "$env:RUNNER_TEMP\terraform" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -lt 1) {
+            throw "Windows PowerShell 5.1 is required for this job."
+          }
+      - name: Install pinned toolchain
+        shell: powershell
+        run: |
+          $Tools = "$env:RUNNER_TEMP\vsphere-tools"
+          .\scripts\install-terraform.ps1 -BinDir $Tools
+          .\scripts\install-govc.ps1 -BinDir $Tools
+          .\scripts\install-jq.ps1 -BinDir $Tools
+          $Tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Validate
         shell: powershell
         run: .\scripts\validate.ps1
+      - name: Scan a TLS vCenter simulator
+        shell: powershell
+        run: |
+          $VcsimArchive = "$env:RUNNER_TEMP\vcsim_Windows_x86_64.zip"
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri "https://github.com/vmware/govmomi/releases/download/v0.55.1/vcsim_Windows_x86_64.zip" `
+            -OutFile $VcsimArchive
+          $ExpectedVcsimHash = "156A51941262B4BC85F6A855EF9793B796C7F0176957C56EFF564637DC502678"
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $VcsimArchive).Hash -cne $ExpectedVcsimHash) {
+            throw "vcsim checksum mismatch."
+          }
+          $VcsimDir = "$env:RUNNER_TEMP\vcsim"
+          Expand-Archive -LiteralPath $VcsimArchive -DestinationPath $VcsimDir
+          $VcsimLog = "$env:RUNNER_TEMP\vcsim.stdout.log"
+          $VcsimError = "$env:RUNNER_TEMP\vcsim.stderr.log"
+          $Vcsim = Start-Process -FilePath (Join-Path $VcsimDir "vcsim.exe") `
+            -ArgumentList @(
+              "-l", "127.0.0.1:8998",
+              "-dc", "1",
+              "-cluster", "1",
+              "-host", "1",
+              "-standalone-host", "1",
+              "-pool", "1",
+              "-vm", "1",
+              "-pg", "1"
+            ) `
+            -RedirectStandardOutput $VcsimLog `
+            -RedirectStandardError $VcsimError `
+            -PassThru
+          try {
+            $env:GOVC_URL = "https://127.0.0.1:8998/sdk"
+            $env:GOVC_USERNAME = "simulator-user"
+            $env:GOVC_PASSWORD = "simulator-password"
+            $CertificateLines = @()
+            for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
+              $CertificateLines = @(& govc.exe about.cert -k -show 2>$null)
+              if ($LASTEXITCODE -eq 0 -and $CertificateLines.Count -gt 0) { break }
+              Start-Sleep -Seconds 1
+            }
+            if ($CertificateLines.Count -eq 0) { throw "vcsim did not become ready." }
+            $CaPath = "$env:RUNNER_TEMP\vcsim-ca.pem"
+            [System.IO.File]::WriteAllLines($CaPath, $CertificateLines, [System.Text.Encoding]::ASCII)
+
+            Remove-Item Env:GOVC_URL -ErrorAction SilentlyContinue
+            Remove-Item Env:GOVC_USERNAME -ErrorAction SilentlyContinue
+            Remove-Item Env:GOVC_PASSWORD -ErrorAction SilentlyContinue
+            $env:VSPHERE_SERVER = "127.0.0.1:8998"
+            $env:VSPHERE_USER = "simulator-user"
+            $env:VSPHERE_PASSWORD = "simulator-password"
+            .\scripts\scan-vsphere.ps1 `
+              -SourceVm "DC0_H0_VM0" `
+              -OutputDirectory "$env:RUNNER_TEMP\vcsim-scan" `
+              -CaCert $CaPath
+            & jq.exe -e `
+              '.read_only == true and .counts.virtual_machines >= 1 and ((.inventory.networks | map(.ref) | length) == (.inventory.networks | map(.ref) | unique | length))' `
+              "$env:RUNNER_TEMP\vcsim-scan\inventory.json"
+            if ($LASTEXITCODE -ne 0) { throw "vcsim scan assertions failed." }
+          }
+          finally {
+            foreach ($Name in @(
+                "GOVC_URL", "GOVC_USERNAME", "GOVC_PASSWORD",
+                "VSPHERE_SERVER", "VSPHERE_USER", "VSPHERE_PASSWORD"
+              )) {
+              Remove-Item "Env:$Name" -ErrorAction SilentlyContinue
+            }
+            if ($Vcsim -and -not $Vcsim.HasExited) {
+              Stop-Process -Id $Vcsim.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+      - name: Build and smoke-test offline bundle
+        shell: powershell
+        run: |
+          .\scripts\build-offline-bundle.ps1
+          $Zip = Get-ChildItem -LiteralPath .\offline-dist -Filter "*-windows_amd64.zip" -File |
+            Select-Object -First 1
+          if (-not $Zip) { throw "Offline bundle was not built." }
+          $ExtractDir = "$env:RUNNER_TEMP\offline-extract"
+          $InstallDir = "$env:RUNNER_TEMP\offline-install"
+          Expand-Archive -LiteralPath $Zip.FullName -DestinationPath $ExtractDir
+          $BundleDir = (Get-ChildItem -LiteralPath $ExtractDir -Directory | Select-Object -First 1).FullName
+          $env:HTTP_PROXY = "http://127.0.0.1:1"
+          $env:HTTPS_PROXY = "http://127.0.0.1:1"
+          $env:ALL_PROXY = "http://127.0.0.1:1"
+          & (Join-Path $BundleDir "install-offline.ps1") -Prefix $InstallDir
+          & (Join-Path $InstallDir "scanner\scan-vsphere.ps1") `
+            -FixtureDir "$env:GITHUB_WORKSPACE\tests\discovery\fixtures" `
+            -OutputDirectory "$env:RUNNER_TEMP\offline-scan" `
+            -GeneratedAt "2026-08-11T00:00:00Z" `
+            -Jq (Join-Path $InstallDir "bin\jq.exe")
+          $OfflineStack = "$env:RUNNER_TEMP\offline-stack"
+          New-Item -ItemType Directory -Path $OfflineStack | Out-Null
+          Copy-Item -Path .\stacks\inventory\*.tf -Destination $OfflineStack
+          Copy-Item -LiteralPath .\stacks\inventory\.terraform.lock.hcl -Destination $OfflineStack
+          $env:TF_CLI_CONFIG_FILE = Join-Path $InstallDir "terraform.rc"
+          & (Join-Path $InstallDir "bin\terraform.exe") "-chdir=$OfflineStack" `
+            init -backend=false -lockfile=readonly -input=false
+          if ($LASTEXITCODE -ne 0) { throw "Offline Terraform init failed." }
+          & (Join-Path $InstallDir "bin\terraform.exe") "-chdir=$OfflineStack" validate
+          if ($LASTEXITCODE -ne 0) { throw "Offline Terraform validate failed." }

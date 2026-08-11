@@ -1,0 +1,9 @@
+{
+  "kind": "enter",
+  "obj": {"type": "Datacenter", "value": "datacenter-1"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "INC"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-d1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"}
+  ]
+}

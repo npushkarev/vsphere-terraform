@@ -1,0 +1,46 @@
+{
+  "kind": "enter",
+  "obj": {"type": "VirtualMachine", "value": "vm-101"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "tst-win-10-12"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-v2"}},
+    {"name": "runtime.powerState", "op": "assign", "val": "poweredOff"},
+    {"name": "runtime.host", "op": "assign", "val": {"type": "HostSystem", "value": "host-11"}},
+    {"name": "resourcePool", "op": "assign", "val": {"type": "ResourcePool", "value": "resgroup-1"}},
+    {"name": "datastore", "op": "assign", "val": {"_value": [{"type": "Datastore", "value": "datastore-21"}]}},
+    {"name": "network", "op": "assign", "val": {"_value": [{"type": "DistributedVirtualPortgroup", "value": "dvportgroup-42"}]}},
+    {"name": "config.template", "op": "assign", "val": false},
+    {"name": "config.guestId", "op": "assign", "val": "windows9_64Guest"},
+    {"name": "config.hardware.numCPU", "op": "assign", "val": 2},
+    {"name": "config.hardware.memoryMB", "op": "assign", "val": 4096},
+    {"name": "config.version", "op": "assign", "val": "vmx-19"},
+    {"name": "config.firmware", "op": "assign", "val": "efi"},
+    {"name": "config.bootOptions.efiSecureBootEnabled", "op": "assign", "val": true},
+    {"name": "config.flags.vbsEnabled", "op": "assign", "val": false},
+    {"name": "config.flags.vvtdEnabled", "op": "assign", "val": false},
+    {"name": "config.nestedHVEnabled", "op": "assign", "val": false},
+    {"name": "guest.toolsStatus", "op": "assign", "val": "toolsOk"},
+    {"name": "guest.toolsRunningStatus", "op": "assign", "val": "guestToolsNotRunning"},
+    {"name": "guest.toolsVersionStatus2", "op": "assign", "val": "guestToolsCurrent"},
+    {"name": "summary.storage.committed", "op": "assign", "val": 68719476736},
+    {"name": "summary.storage.uncommitted", "op": "assign", "val": 0},
+    {"name": "config.extraConfig", "op": "assign", "val": "SECRET-EXTRACONFIG-SENTINEL"}
+  ]
+}
+{
+  "kind": "enter",
+  "obj": {"type": "VirtualMachine", "value": "vm-102"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "Шаблон Windows"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-v2"}},
+    {"name": "runtime.powerState", "op": "assign", "val": "poweredOff"},
+    {"name": "runtime.host", "op": "assign", "val": null},
+    {"name": "resourcePool", "op": "assign", "val": null},
+    {"name": "datastore", "op": "assign", "val": {"_value": [{"type": "Datastore", "value": "datastore-21"}]}},
+    {"name": "network", "op": "assign", "val": {"_value": []}},
+    {"name": "config.template", "op": "assign", "val": true},
+    {"name": "config.guestId", "op": "assign", "val": "windows9_64Guest"},
+    {"name": "config.hardware.numCPU", "op": "assign", "val": 2},
+    {"name": "config.hardware.memoryMB", "op": "assign", "val": 4096}
+  ]
+}

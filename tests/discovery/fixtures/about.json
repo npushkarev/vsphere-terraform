@@ -1,0 +1,10 @@
+{
+  "about": {
+    "name": "VMware vCenter Server",
+    "fullName": "VMware vCenter Server 7.0.3 fixture",
+    "version": "7.0.3",
+    "build": "fixture-build",
+    "apiType": "VirtualCenter",
+    "apiVersion": "7.0.3"
+  }
+}

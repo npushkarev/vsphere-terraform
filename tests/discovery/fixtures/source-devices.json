@@ -1,0 +1,30 @@
+{
+  "devices": [
+    {
+      "type": "ParaVirtualSCSIController",
+      "name": "pvscsi-1000",
+      "key": 1000,
+      "busNumber": 0
+    },
+    {
+      "type": "VirtualDisk",
+      "name": "disk-1000-0",
+      "controllerKey": 1000,
+      "unitNumber": 0,
+      "capacityInBytes": 68719476736,
+      "backing": {"fileName": "[DS 01] SECRET-VMDK-PATH.vmdk"}
+    },
+    {
+      "type": "VirtualVmxnet3",
+      "name": "ethernet-0",
+      "controllerKey": 100,
+      "unitNumber": 7,
+      "macAddress": "SECRET-MAC-SENTINEL"
+    },
+    {
+      "type": "VirtualTPM",
+      "name": "tpm-0",
+      "key": 11000
+    }
+  ]
+}

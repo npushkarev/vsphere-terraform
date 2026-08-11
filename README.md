@@ -1,8 +1,8 @@
 # Terraform для vSphere 7.0.3
 
-Репозиторий устанавливает проверенный Terraform CLI и позволяет безопасно читать
-инвентарь vCenter, создавать Linux VM из шаблона и клонировать Windows 10 из
-существующей выключенной VM.
+Репозиторий устанавливает проверенный Terraform CLI, делает полный read-only
+скан видимой топологии vCenter, создаёт Linux VM из шаблона и клонирует Windows
+10 из существующей выключенной VM.
 
 Terraform запускается с рабочей станции, dev-VM или CI и обращается к vCenter по
 HTTPS API. Ничего устанавливать внутрь vCenter не нужно.
@@ -11,6 +11,8 @@ HTTPS API. Ничего устанавливать внутрь vCenter не н�
 
 - Terraform CLI: `1.15.8`.
 - Provider: `vmware/vsphere = 2.15.1`.
+- VMware govc: `0.55.1`.
+- jq: `1.8.2`.
 - vCenter из текущего окружения: `incvc.inc.elara.local`.
 
 Provider зафиксирован строго на `2.15.1`: это последний релиз, документация
@@ -28,8 +30,9 @@ Provider зафиксирован строго на `2.15.1`: это после�
 - `stacks/windows-clone` — один full clone Windows VM с Sysprep.
 - `modules/linux-vm-clone` — модуль клонирования с `prevent_destroy = true`.
 - `scripts` — установка, проверка, plan/apply и offline bundle.
+- `scripts/scan-vsphere.*` — полный read-only discovery для Debian/Windows.
 
-## 1. Установка Terraform
+## 1. Установка инструментов
 
 Сначала клонируйте приватный репозиторий и перейдите в него:
 
@@ -42,22 +45,30 @@ Debian Linux x64:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl unzip gnupg jq make
+sudo apt-get install -y ca-certificates curl unzip gnupg make
 make install
 export PATH="$HOME/.local/bin:$PATH"
 terraform version
+govc version
+jq --version
 ```
 
 Windows x64, обычный PowerShell — WSL не нужен:
 
 ```powershell
-.\scripts\install-terraform.ps1 -AddToUserPath
+$Tools = "$env:LOCALAPPDATA\Programs\vsphere-tools"
+.\scripts\install-terraform.ps1 -BinDir $Tools
+.\scripts\install-govc.ps1 -BinDir $Tools
+.\scripts\install-jq.ps1 -BinDir $Tools
+$env:Path = "$Tools;$env:Path"
 terraform version
+govc version
+jq --version
 ```
 
-Linux-установщик принимает `--bin-dir`, не вызывает `sudo`, проверяет
-PGP-подпись HashiCorp, fingerprint ключа и SHA-256. Windows-установщик проверяет
-жёстко зафиксированный SHA-256 официального x64 archive.
+Установщики не вызывают `sudo` и проверяют закреплённые SHA-256 официальных
+архивов. Linux Terraform дополнительно проверяется по подписанному HashiCorp
+checksum.
 
 ## 2. Учётная запись vCenter
 
@@ -87,7 +98,35 @@ $env:VSPHERE_PASSWORD = $Credential.GetNetworkCredential().Password
 TLS-проверка включена принудительно. Установите корпоративный CA в trust store
 машины, с которой запускается Terraform.
 
-## 3. Безопасная проверка подключения
+## 3. Сначала просканируйте весь vCenter
+
+Для полного inventory назначьте отдельной учётке роль Read-only на корне
+vCenter с наследованием. Сканер запускаете вы внутри своего контура; он не
+отправляет отчёт и во время runtime обращается только к указанному vCenter.
+
+Debian:
+
+```sh
+./scripts/scan-vsphere.sh \
+  --source-vm 'tst-win-10-12' \
+  --output-dir '/private/path/vsphere-scan' \
+  --ca-cert '/private/path/internal-ca.pem'
+```
+
+Windows:
+
+```powershell
+.\scripts\scan-vsphere.ps1 `
+  -SourceVm "tst-win-10-12" `
+  -OutputDirectory "C:\Private\vsphere-scan" `
+  -CaCert "C:\Private\internal-ca.pem"
+```
+
+Результат содержит Markdown-отчёт, дерево, JSON и безопасную заготовку
+`windows-clone.generated.tfvars`. Полная offline-инструкция, состав отчёта и
+ограничения: [docs/discovery.md](docs/discovery.md).
+
+## 4. Безопасная проверка Terraform-подключения
 
 По умолчанию inventory ищет datacenter `INC`. Остальные объекты необязательны.
 
@@ -106,7 +145,7 @@ Windows-эквивалент:
 Скрипт проверяет JSON plan и завершится ошибкой, если в inventory появится хотя
 бы одно управляемое изменение.
 
-## 4. Создание Linux VM
+## 5. Создание Linux VM
 
 1. Скопируйте `stacks/vm-clones/vm-clones.tfvars.example` за пределы Git или в
    игнорируемый `.tfvars`.
@@ -142,7 +181,7 @@ $env:ALLOW_VM_APPLY = "yes"
 Любое действие `delete` блокируется wrapper-скриптами, а VM защищены
 `prevent_destroy = true`. Цели `destroy` в Makefile нет.
 
-## 5. Клон Windows 10 `tst-win-10-12`
+## 6. Клон Windows 10 `tst-win-10-12`
 
 На последней фотографии target VM называется `tst-win-10-12`. Terraform может
 использовать обычную VM как источник; импортировать или превращать её в template
@@ -179,5 +218,5 @@ plan до отсутствия неожиданных изменений. См. 
 шифрованием, versioning и locking: [docs/state.md](docs/state.md). Локальные
 state и plan-файлы игнорируются Git, но всё равно содержат чувствительные данные.
 
-Для Astra/TeamCity без интернета используйте
+Для Debian/Windows/Astra/TeamCity без интернета используйте
 [docs/offline.md](docs/offline.md).

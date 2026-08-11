@@ -1,0 +1,11 @@
+{
+  "kind": "enter",
+  "obj": {"type": "ResourcePool", "value": "resgroup-1"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "Resources"},
+    {"name": "parent", "op": "assign", "val": {"type": "ClusterComputeResource", "value": "domain-c1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"},
+    {"name": "runtime.cpu.maxUsage", "op": "assign", "val": 64000},
+    {"name": "runtime.memory.maxUsage", "op": "assign", "val": 262144}
+  ]
+}

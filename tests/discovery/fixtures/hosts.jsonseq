@@ -1,0 +1,18 @@
+{
+  "kind": "enter",
+  "obj": {"type": "HostSystem", "value": "host-11"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "esx-01.inc.local"},
+    {"name": "parent", "op": "assign", "val": {"type": "ClusterComputeResource", "value": "domain-c1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"},
+    {"name": "runtime.connectionState", "op": "assign", "val": "connected"},
+    {"name": "runtime.powerState", "op": "assign", "val": "poweredOn"},
+    {"name": "runtime.inMaintenanceMode", "op": "assign", "val": false},
+    {"name": "summary.hardware.vendor", "op": "assign", "val": "Fixture Vendor"},
+    {"name": "summary.hardware.model", "op": "assign", "val": "Fixture Model"},
+    {"name": "summary.hardware.cpuMhz", "op": "assign", "val": 2000},
+    {"name": "summary.hardware.numCpuCores", "op": "assign", "val": 32},
+    {"name": "summary.hardware.memorySize", "op": "assign", "val": 274877906944},
+    {"name": "summary.config.product.fullName", "op": "assign", "val": "VMware ESXi 7.0.3 fixture"}
+  ]
+}

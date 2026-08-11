@@ -1,0 +1,9 @@
+{
+  "kind": "enter",
+  "obj": {"type": "DistributedVirtualSwitch", "value": "dvs-41"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "DVS 01"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-n1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"}
+  ]
+}

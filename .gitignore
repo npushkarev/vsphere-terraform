@@ -16,4 +16,5 @@ override.tf.json
 *_override.tf.json
 .plans/
 offline-dist/
+/scan-results/
 .DS_Store

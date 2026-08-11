@@ -4,6 +4,9 @@ param([string]$Terraform = "terraform")
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $ProjectDir = Split-Path -Parent $PSScriptRoot
+$Utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+$ExpectedGovcVersion = (Get-Content -LiteralPath (Join-Path $ProjectDir ".govc-version") -Raw).Trim()
+$ExpectedJqVersion = (Get-Content -LiteralPath (Join-Path $ProjectDir ".jq-version") -Raw).Trim()
 
 foreach ($Name in @("VSPHERE_USER", "VSPHERE_PASSWORD", "VSPHERE_SERVER")) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) {
@@ -17,6 +20,17 @@ function Invoke-Terraform {
     if ($LASTEXITCODE -ne 0) {
         throw "Terraform failed: $($Arguments -join ' ')"
     }
+}
+
+$Govc = (Get-Command "govc.exe" -CommandType Application -ErrorAction Stop).Path
+$GovcActual = @(& $Govc version)
+if ($LASTEXITCODE -ne 0 -or ($GovcActual -join "`n").Trim() -cne "govc $ExpectedGovcVersion") {
+    throw "Unexpected govc version."
+}
+$Jq = (Get-Command "jq.exe" -CommandType Application -ErrorAction Stop).Path
+$JqActual = @(& $Jq --version)
+if ($LASTEXITCODE -ne 0 -or ($JqActual -join "`n").Trim() -cne "jq-$ExpectedJqVersion") {
+    throw "Unexpected jq version."
 }
 
 Invoke-Terraform -Arguments @("-chdir=$ProjectDir", "fmt", "-check", "-recursive")
@@ -39,6 +53,110 @@ foreach ($PowerShellFile in Get-ChildItem -LiteralPath (Join-Path $ProjectDir "s
     if ($ParseErrors.Count -gt 0) {
         throw "PowerShell syntax error in $($PowerShellFile.Name): $($ParseErrors[0].Message)"
     }
+}
+
+$DiscoveryTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vsphere-discovery-validation-" + [guid]::NewGuid())
+$DiscoveryOutput = Join-Path $DiscoveryTestRoot "result with spaces"
+New-Item -ItemType Directory -Path $DiscoveryTestRoot | Out-Null
+try {
+    & (Join-Path $ProjectDir "scripts\scan-vsphere.ps1") `
+        -FixtureDir (Join-Path $ProjectDir "tests\discovery\fixtures") `
+        -SourceVm "tst-win-10-12" `
+        -OutputDirectory $DiscoveryOutput `
+        -GeneratedAt "2026-08-11T00:00:00Z" `
+        -Jq $Jq
+
+    $InventoryText = [System.IO.File]::ReadAllText(
+        (Join-Path $DiscoveryOutput "inventory.json"),
+        $Utf8NoBom
+    )
+    $Inventory = $InventoryText | ConvertFrom-Json
+    if ($Inventory.schema_version -cne "1.0.0" -or -not $Inventory.read_only) {
+        throw "Unexpected discovery result metadata."
+    }
+    if ($Inventory.counts.datacenters -ne 1 -or $Inventory.counts.virtual_machines -ne 1 -or
+        $Inventory.counts.templates -ne 1 -or $Inventory.clone_candidate.match_count -ne 1) {
+        throw "Unexpected discovery fixture counts."
+    }
+    if ($Inventory.clone_candidate.source_vm_path -cne "/INC/vm/Test Lab/tst-win-10-12") {
+        throw "Discovery source VM resolution failed."
+    }
+    $NetworkRefs = @($Inventory.inventory.networks | ForEach-Object { $_.ref })
+    if ($NetworkRefs.Count -ne @($NetworkRefs | Select-Object -Unique).Count) {
+        throw "Discovery output contains duplicate networks."
+    }
+
+    $AllResultText = @(Get-ChildItem -LiteralPath $DiscoveryOutput -File | ForEach-Object {
+            [System.IO.File]::ReadAllText($_.FullName, $Utf8NoBom)
+        }) -join "`n"
+    foreach ($Sentinel in @(
+            "SECRET-EXTRACONFIG-SENTINEL",
+            "SECRET-MAC-SENTINEL",
+            "SECRET-VMDK-PATH",
+            "macAddress",
+            "extraConfig",
+            "ipAddress"
+        )) {
+        if ($AllResultText.Contains($Sentinel)) {
+            throw "Discovery output leaked forbidden field: $Sentinel"
+        }
+    }
+    $ExpectedUnicode = (-join @(
+            [char]0x0428,
+            [char]0x0430,
+            [char]0x0431,
+            [char]0x043B,
+            [char]0x043E,
+            [char]0x043D
+        )) + " Windows"
+    if (-not $AllResultText.Contains($ExpectedUnicode)) {
+        throw "Discovery output did not preserve UTF-8 inventory names."
+    }
+    $GeneratedTfvars = Join-Path $DiscoveryOutput "windows-clone.generated.tfvars"
+    $GeneratedText = [System.IO.File]::ReadAllText($GeneratedTfvars, $Utf8NoBom)
+    if (-not $GeneratedText.Contains('source_powered_off_acknowledgement = ""')) {
+        throw "Generated tfvars must not authorize clone apply."
+    }
+    Invoke-Terraform -Arguments @("fmt", "-check", $GeneratedTfvars)
+
+    foreach ($Line in Get-Content -LiteralPath (Join-Path $DiscoveryOutput "SHA256SUMS")) {
+        if ($Line -notmatch '^([0-9a-f]{64})  (.+)$') { throw "Invalid discovery checksum line." }
+        $ActualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath `
+                (Join-Path $DiscoveryOutput $Matches[2])).Hash.ToLowerInvariant()
+        if ($ActualHash -ne $Matches[1]) { throw "Discovery result checksum mismatch." }
+    }
+    $OutputAcl = Get-Acl -LiteralPath $DiscoveryOutput
+    if (-not $OutputAcl.AreAccessRulesProtected) {
+        throw "Discovery result directory inherited unexpected ACL rules."
+    }
+
+    $RejectedExistingOutput = $false
+    try {
+        & (Join-Path $ProjectDir "scripts\scan-vsphere.ps1") `
+            -FixtureDir (Join-Path $ProjectDir "tests\discovery\fixtures") `
+            -OutputDirectory $DiscoveryOutput `
+            -GeneratedAt "2026-08-11T00:00:00Z" `
+            -Jq $Jq
+    }
+    catch {
+        $RejectedExistingOutput = $true
+    }
+    if (-not $RejectedExistingOutput) { throw "Scanner overwrote an existing result directory." }
+}
+finally {
+    Remove-Item -LiteralPath $DiscoveryTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+& git -C $ProjectDir check-ignore -q "scan-results/validation/inventory.json"
+if ($LASTEXITCODE -ne 0) { throw "scan-results must be ignored by Git." }
+
+$OfflineShell = Get-Content -LiteralPath (Join-Path $ProjectDir "scripts\install-offline.sh") -Raw
+if (-not $OfflineShell.Contains("export CHECKPOINT_DISABLE=1")) {
+    throw "Linux offline installer must disable Terraform checkpoint before first execution."
+}
+$OfflinePowerShell = Get-Content -LiteralPath (Join-Path $ProjectDir "scripts\install-offline.ps1") -Raw
+if (-not $OfflinePowerShell.Contains('CHECKPOINT_DISABLE = "1"')) {
+    throw "Windows offline installer must disable Terraform checkpoint before first execution."
 }
 
 foreach ($VersionsFile in @(

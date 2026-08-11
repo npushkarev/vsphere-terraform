@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/vsphere-terraform/vsphere-inventory-v1.schema.json",
+  "title": "Read-only vSphere inventory report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at_utc",
+    "read_only",
+    "collector",
+    "endpoint",
+    "scope",
+    "counts",
+    "inventory",
+    "clone_candidate"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "generated_at_utc": {"type": "string", "format": "date-time"},
+    "read_only": {"const": true},
+    "collector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["govc_version", "jq_version"],
+      "properties": {
+        "govc_version": {"type": "string"},
+        "jq_version": {"type": "string"}
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["server", "name", "full_name", "api_type", "api_version", "version", "build"],
+      "properties": {
+        "server": {"type": "string", "minLength": 1},
+        "name": {"type": ["string", "null"]},
+        "full_name": {"type": ["string", "null"]},
+        "api_type": {"const": "VirtualCenter"},
+        "api_version": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "build": {"type": ["string", "null"]}
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "source_vm_selector", "visibility_note"],
+      "properties": {
+        "root": {"const": "/"},
+        "source_vm_selector": {"type": "string", "minLength": 1},
+        "visibility_note": {"type": "string"}
+      }
+    },
+    "counts": {"$ref": "#/$defs/counts"},
+    "inventory": {"$ref": "#/$defs/inventory"},
+    "clone_candidate": {"$ref": "#/$defs/cloneCandidate"}
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "nullableNumber": {"type": ["number", "null"]},
+    "nullableBoolean": {"type": ["boolean", "null"]},
+    "stringArray": {"type": "array", "items": {"type": "string"}},
+    "pathObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "type", "moid", "path"],
+      "properties": {
+        "ref": {"type": "string"},
+        "type": {"type": "string"},
+        "moid": {"type": "string"},
+        "path": {"type": "string"}
+      }
+    },
+    "baseObject": {
+      "type": "object",
+      "required": ["ref", "type", "moid", "name", "path", "parent_ref"],
+      "properties": {
+        "ref": {"type": "string"},
+        "type": {"type": "string"},
+        "moid": {"type": "string"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "path": {"type": "string"},
+        "parent_ref": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "datacenter": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {"status": {"$ref": "#/$defs/nullableString"}}
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "compute": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": ["status", "host_count", "effective_host_count", "cpu_mhz", "cpu_cores", "memory_bytes"],
+          "properties": {
+            "status": {"$ref": "#/$defs/nullableString"},
+            "host_count": {"$ref": "#/$defs/nullableNumber"},
+            "effective_host_count": {"$ref": "#/$defs/nullableNumber"},
+            "cpu_mhz": {"$ref": "#/$defs/nullableNumber"},
+            "cpu_cores": {"$ref": "#/$defs/nullableNumber"},
+            "memory_bytes": {"$ref": "#/$defs/nullableNumber"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "host": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": [
+            "status", "connection_state", "power_state", "maintenance_mode", "vendor", "model",
+            "cpu_mhz", "cpu_cores", "memory_bytes", "product"
+          ],
+          "properties": {
+            "status": {"$ref": "#/$defs/nullableString"},
+            "connection_state": {"$ref": "#/$defs/nullableString"},
+            "power_state": {"$ref": "#/$defs/nullableString"},
+            "maintenance_mode": {"$ref": "#/$defs/nullableBoolean"},
+            "vendor": {"$ref": "#/$defs/nullableString"},
+            "model": {"$ref": "#/$defs/nullableString"},
+            "cpu_mhz": {"$ref": "#/$defs/nullableNumber"},
+            "cpu_cores": {"$ref": "#/$defs/nullableNumber"},
+            "memory_bytes": {"$ref": "#/$defs/nullableNumber"},
+            "product": {"$ref": "#/$defs/nullableString"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "resourcePool": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": ["status", "cpu_max_mhz", "memory_max_mb"],
+          "properties": {
+            "status": {"$ref": "#/$defs/nullableString"},
+            "cpu_max_mhz": {"$ref": "#/$defs/nullableNumber"},
+            "memory_max_mb": {"$ref": "#/$defs/nullableNumber"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "datastore": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": ["status", "datastore_type", "capacity_bytes", "free_bytes", "accessible", "maintenance_mode"],
+          "properties": {
+            "status": {"$ref": "#/$defs/nullableString"},
+            "datastore_type": {"$ref": "#/$defs/nullableString"},
+            "capacity_bytes": {"$ref": "#/$defs/nullableNumber"},
+            "free_bytes": {"$ref": "#/$defs/nullableNumber"},
+            "accessible": {"$ref": "#/$defs/nullableBoolean"},
+            "maintenance_mode": {"$ref": "#/$defs/nullableString"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "storagePod": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {"status": {"$ref": "#/$defs/nullableString"}}
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "distributedSwitch": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": ["kind", "status"],
+          "properties": {
+            "kind": {"const": "distributed_switch"},
+            "status": {"$ref": "#/$defs/nullableString"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "network": {
+      "oneOf": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseObject"},
+            {
+              "type": "object",
+              "required": ["kind", "accessible"],
+              "properties": {
+                "kind": {"enum": ["standard_network", "opaque_network"]},
+                "accessible": {"$ref": "#/$defs/nullableBoolean"}
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseObject"},
+            {
+              "type": "object",
+              "required": ["kind", "accessible", "switch_ref"],
+              "properties": {
+                "kind": {"const": "distributed_portgroup"},
+                "accessible": {"$ref": "#/$defs/nullableBoolean"},
+                "switch_ref": {"$ref": "#/$defs/nullableString"}
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "vmFields": {
+      "allOf": [
+        {"$ref": "#/$defs/baseObject"},
+        {
+          "type": "object",
+          "required": [
+            "power_state", "template", "guest_id", "cpu_count", "memory_mb", "hardware_version",
+            "firmware", "secure_boot", "vbs_enabled", "vvtd_enabled", "nested_hv_enabled",
+            "tools_status", "tools_running_status", "tools_version_status", "host_ref", "host_path",
+            "resource_pool_ref", "resource_pool_path", "datastore_refs", "datastore_paths",
+            "network_refs", "network_paths", "storage_committed_bytes", "storage_uncommitted_bytes"
+          ],
+          "properties": {
+            "power_state": {"$ref": "#/$defs/nullableString"},
+            "template": {"type": "boolean"},
+            "guest_id": {"$ref": "#/$defs/nullableString"},
+            "cpu_count": {"$ref": "#/$defs/nullableNumber"},
+            "memory_mb": {"$ref": "#/$defs/nullableNumber"},
+            "hardware_version": {"$ref": "#/$defs/nullableString"},
+            "firmware": {"$ref": "#/$defs/nullableString"},
+            "secure_boot": {"$ref": "#/$defs/nullableBoolean"},
+            "vbs_enabled": {"$ref": "#/$defs/nullableBoolean"},
+            "vvtd_enabled": {"$ref": "#/$defs/nullableBoolean"},
+            "nested_hv_enabled": {"$ref": "#/$defs/nullableBoolean"},
+            "tools_status": {"$ref": "#/$defs/nullableString"},
+            "tools_running_status": {"$ref": "#/$defs/nullableString"},
+            "tools_version_status": {"$ref": "#/$defs/nullableString"},
+            "host_ref": {"$ref": "#/$defs/nullableString"},
+            "host_path": {"$ref": "#/$defs/nullableString"},
+            "resource_pool_ref": {"$ref": "#/$defs/nullableString"},
+            "resource_pool_path": {"$ref": "#/$defs/nullableString"},
+            "datastore_refs": {"$ref": "#/$defs/stringArray"},
+            "datastore_paths": {"$ref": "#/$defs/stringArray"},
+            "network_refs": {"$ref": "#/$defs/stringArray"},
+            "network_paths": {"$ref": "#/$defs/stringArray"},
+            "storage_committed_bytes": {"$ref": "#/$defs/nullableNumber"},
+            "storage_uncommitted_bytes": {"$ref": "#/$defs/nullableNumber"}
+          }
+        }
+      ]
+    },
+    "virtualMachine": {
+      "allOf": [{"$ref": "#/$defs/vmFields"}],
+      "unevaluatedProperties": false
+    },
+    "disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "controller_key", "unit_number", "capacity_bytes"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nullableString"},
+        "controller_key": {"$ref": "#/$defs/nullableNumber"},
+        "unit_number": {"$ref": "#/$defs/nullableNumber"},
+        "capacity_bytes": {"$ref": "#/$defs/nullableNumber"}
+      }
+    },
+    "nic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "controller_key", "unit_number"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nullableString"},
+        "type": {"type": "string"},
+        "controller_key": {"$ref": "#/$defs/nullableNumber"},
+        "unit_number": {"$ref": "#/$defs/nullableNumber"}
+      }
+    },
+    "scsiController": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "bus_number", "key"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nullableString"},
+        "type": {"type": "string"},
+        "bus_number": {"$ref": "#/$defs/nullableNumber"},
+        "key": {"$ref": "#/$defs/nullableNumber"}
+      }
+    },
+    "devices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disks", "nics", "scsi_controllers", "vtpm_count"],
+      "properties": {
+        "disks": {"type": "array", "items": {"$ref": "#/$defs/disk"}},
+        "nics": {"type": "array", "items": {"$ref": "#/$defs/nic"}},
+        "scsi_controllers": {"type": "array", "items": {"$ref": "#/$defs/scsiController"}},
+        "vtpm_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "cloneDetails": {
+      "allOf": [
+        {"$ref": "#/$defs/vmFields"},
+        {
+          "type": "object",
+          "required": ["devices"],
+          "properties": {"devices": {"$ref": "#/$defs/devices"}}
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "readinessCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "message"],
+      "properties": {
+        "name": {"type": "string"},
+        "status": {"enum": ["pass", "warn", "fail"]},
+        "message": {"type": "string"}
+      }
+    },
+    "suggestedValues": {
+      "oneOf": [
+        {"type": "object", "maxProperties": 0},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "datacenter_name", "source_vm_name", "source_folder_candidate", "cluster_candidates",
+            "datastore_candidates", "network_candidates"
+          ],
+          "properties": {
+            "datacenter_name": {"type": "string"},
+            "source_vm_name": {"type": "string"},
+            "source_folder_candidate": {"type": "string"},
+            "cluster_candidates": {"$ref": "#/$defs/stringArray"},
+            "datastore_candidates": {"$ref": "#/$defs/stringArray"},
+            "network_candidates": {"$ref": "#/$defs/stringArray"}
+          }
+        }
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "all_objects", "datacenters", "clusters", "compute_resources", "hosts", "resource_pools",
+        "datastores", "storage_pods", "distributed_switches", "networks", "virtual_machines", "templates"
+      ],
+      "properties": {
+        "all_objects": {"type": "integer", "minimum": 0},
+        "datacenters": {"type": "integer", "minimum": 0},
+        "clusters": {"type": "integer", "minimum": 0},
+        "compute_resources": {"type": "integer", "minimum": 0},
+        "hosts": {"type": "integer", "minimum": 0},
+        "resource_pools": {"type": "integer", "minimum": 0},
+        "datastores": {"type": "integer", "minimum": 0},
+        "storage_pods": {"type": "integer", "minimum": 0},
+        "distributed_switches": {"type": "integer", "minimum": 0},
+        "networks": {"type": "integer", "minimum": 0},
+        "virtual_machines": {"type": "integer", "minimum": 0},
+        "templates": {"type": "integer", "minimum": 0}
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objects", "folders", "datacenters", "clusters", "compute_resources", "hosts",
+        "resource_pools", "datastores", "storage_pods", "distributed_switches", "networks",
+        "virtual_machines"
+      ],
+      "properties": {
+        "objects": {"type": "array", "items": {"$ref": "#/$defs/pathObject"}},
+        "folders": {"type": "array", "items": {"$ref": "#/$defs/pathObject"}},
+        "datacenters": {"type": "array", "items": {"$ref": "#/$defs/datacenter"}},
+        "clusters": {"type": "array", "items": {"$ref": "#/$defs/compute"}},
+        "compute_resources": {"type": "array", "items": {"$ref": "#/$defs/compute"}},
+        "hosts": {"type": "array", "items": {"$ref": "#/$defs/host"}},
+        "resource_pools": {"type": "array", "items": {"$ref": "#/$defs/resourcePool"}},
+        "datastores": {"type": "array", "items": {"$ref": "#/$defs/datastore"}},
+        "storage_pods": {"type": "array", "items": {"$ref": "#/$defs/storagePod"}},
+        "distributed_switches": {"type": "array", "items": {"$ref": "#/$defs/distributedSwitch"}},
+        "networks": {"type": "array", "items": {"$ref": "#/$defs/network"}},
+        "virtual_machines": {"type": "array", "items": {"$ref": "#/$defs/virtualMachine"}}
+      }
+    },
+    "cloneCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match_count", "source_vm_ref", "source_vm_path", "details", "checks", "suggested_values", "warnings"],
+      "properties": {
+        "match_count": {"type": "integer", "minimum": 0},
+        "source_vm_ref": {"type": ["string", "null"]},
+        "source_vm_path": {"type": ["string", "null"]},
+        "details": {"oneOf": [{"$ref": "#/$defs/cloneDetails"}, {"type": "null"}]},
+        "checks": {"type": "array", "items": {"$ref": "#/$defs/readinessCheck"}},
+        "suggested_values": {"$ref": "#/$defs/suggestedValues"},
+        "warnings": {"$ref": "#/$defs/stringArray"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"match_count": {"const": 1}}, "required": ["match_count"]},
+          "then": {
+            "properties": {
+              "source_vm_ref": {"type": "string"},
+              "source_vm_path": {"type": "string"},
+              "details": {"$ref": "#/$defs/cloneDetails"}
+            }
+          },
+          "else": {
+            "properties": {
+              "source_vm_ref": {"type": "null"},
+              "source_vm_path": {"type": "null"},
+              "details": {"type": "null"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

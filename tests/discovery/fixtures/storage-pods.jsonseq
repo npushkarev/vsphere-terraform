@@ -1,0 +1,9 @@
+{
+  "kind": "enter",
+  "obj": {"type": "StoragePod", "value": "group-p1"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "Storage Cluster"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-s1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"}
+  ]
+}

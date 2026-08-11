@@ -1,0 +1,14 @@
+{
+  "kind": "enter",
+  "obj": {"type": "Datastore", "value": "datastore-21"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "DS 01"},
+    {"name": "parent", "op": "assign", "val": {"type": "StoragePod", "value": "group-p1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"},
+    {"name": "summary.type", "op": "assign", "val": "VMFS"},
+    {"name": "summary.capacity", "op": "assign", "val": 1099511627776},
+    {"name": "summary.freeSpace", "op": "assign", "val": 549755813888},
+    {"name": "summary.accessible", "op": "assign", "val": true},
+    {"name": "summary.maintenanceMode", "op": "assign", "val": "normal"}
+  ]
+}

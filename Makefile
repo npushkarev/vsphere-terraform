@@ -1,12 +1,18 @@
 TF ?= terraform
+GOVC ?= govc
+JQ ?= jq
 STACK ?= inventory
 VAR_FILE ?=
 PLAN ?=
+SOURCE_VM ?= tst-win-10-12
+OUTPUT_DIR ?=
+CA_CERT ?=
 
-.PHONY: help install fmt init validate plan apply offline-bundle
+.PHONY: help install scan fmt init validate plan apply offline-bundle
 
 help:
 	@echo "make install"
+	@echo "make scan SOURCE_VM=tst-win-10-12 OUTPUT_DIR=/private/path/vsphere-scan"
 	@echo "make fmt"
 	@echo "make init STACK=inventory"
 	@echo "make validate"
@@ -19,6 +25,14 @@ help:
 
 install:
 	./scripts/install-terraform.sh
+	./scripts/install-govc.sh
+	./scripts/install-jq.sh
+
+scan:
+	@set -- --source-vm "$(SOURCE_VM)"; \
+	if [ -n "$(OUTPUT_DIR)" ]; then set -- "$$@" --output-dir "$(OUTPUT_DIR)"; fi; \
+	if [ -n "$(CA_CERT)" ]; then set -- "$$@" --ca-cert "$(CA_CERT)"; fi; \
+	GOVC_BIN="$(GOVC)" JQ_BIN="$(JQ)" ./scripts/scan-vsphere.sh "$$@"
 
 fmt:
 	$(TF) fmt -check -recursive

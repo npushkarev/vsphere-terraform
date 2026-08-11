@@ -1,0 +1,18 @@
+{
+  "kind": "enter",
+  "obj": {"type": "Network", "value": "network-31"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "VM Network"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-n1"}},
+    {"name": "summary.accessible", "op": "assign", "val": true}
+  ]
+}
+{
+  "kind": "enter",
+  "obj": {"type": "DistributedVirtualPortgroup", "value": "dvportgroup-42"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "Servers VLAN 120"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-n1"}},
+    {"name": "summary.accessible", "op": "assign", "val": true}
+  ]
+}

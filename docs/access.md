@@ -5,7 +5,8 @@ Terraform использует vSphere API. Машина запуска долж
 
 Рекомендуются две учётные записи:
 
-1. Inventory account — Read Only на нужном datacenter.
+1. Discovery/inventory account — Read Only на корне vCenter с наследованием,
+   если нужен полный скан; либо на нужном datacenter для ограниченного обзора.
 2. Provisioning account — только на целевой folder/resource pool/datastore/
    network/template.
 
@@ -27,3 +28,6 @@ source, создание VM в target folder, назначение resource pool
 Provider фиксирует `allow_unverified_ssl = false`, `persist_session = false` и
 `client_debug = false`. Для внутреннего CA установите корневой сертификат в
 системный trust store runner-а.
+
+Полный read-only скан выполняется отдельно до Terraform plan. Он видит только
+объекты, доступные учётной записи, и описан в [discovery.md](discovery.md).

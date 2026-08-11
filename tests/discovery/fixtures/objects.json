@@ -1,0 +1,19 @@
+[
+  "Folder:group-d1\t/",
+  "Datacenter:datacenter-1\t/INC",
+  "Folder:group-v1\t/INC/vm",
+  "Folder:group-v2\t/INC/vm/Test Lab",
+  "VirtualMachine:vm-101\t/INC/vm/Test Lab/tst-win-10-12",
+  "VirtualMachine:vm-102\t/INC/vm/Test Lab/Шаблон Windows",
+  "Folder:group-h1\t/INC/host",
+  "ClusterComputeResource:domain-c1\t/INC/host/Cluster 01",
+  "HostSystem:host-11\t/INC/host/Cluster 01/esx-01.inc.local",
+  "ResourcePool:resgroup-1\t/INC/host/Cluster 01/Resources",
+  "Folder:group-s1\t/INC/datastore",
+  "StoragePod:group-p1\t/INC/datastore/Storage Cluster",
+  "Datastore:datastore-21\t/INC/datastore/Storage Cluster/DS 01",
+  "Folder:group-n1\t/INC/network",
+  "Network:network-31\t/INC/network/VM Network",
+  "DistributedVirtualSwitch:dvs-41\t/INC/network/DVS 01",
+  "DistributedVirtualPortgroup:dvportgroup-42\t/INC/network/Servers VLAN 120"
+]

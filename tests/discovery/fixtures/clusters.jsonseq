@@ -1,0 +1,14 @@
+{
+  "kind": "enter",
+  "obj": {"type": "ClusterComputeResource", "value": "domain-c1"},
+  "changeSet": [
+    {"name": "name", "op": "assign", "val": "Cluster 01"},
+    {"name": "parent", "op": "assign", "val": {"type": "Folder", "value": "group-h1"}},
+    {"name": "overallStatus", "op": "assign", "val": "green"},
+    {"name": "summary.numHosts", "op": "assign", "val": 1},
+    {"name": "summary.numEffectiveHosts", "op": "assign", "val": 1},
+    {"name": "summary.totalCpu", "op": "assign", "val": 64000},
+    {"name": "summary.numCpuCores", "op": "assign", "val": 32},
+    {"name": "summary.totalMemory", "op": "assign", "val": 274877906944}
+  ]
+}

@@ -6,7 +6,8 @@ param(
     [string]$Govc = "govc.exe",
     [string]$Jq = "jq.exe",
     [string]$FixtureDir,
-    [string]$GeneratedAt
+    [string]$GeneratedAt,
+    [ValidateRange(1, 3600)][int]$CommandTimeoutSeconds = 600
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,6 +112,17 @@ function Invoke-NativeCapture {
     if (-not $Process.Start()) { throw "$Label did not start." }
     $StdoutTask = $Process.StandardOutput.ReadToEndAsync()
     $StderrTask = $Process.StandardError.ReadToEndAsync()
+    $Exited = $Process.WaitForExit([int]($CommandTimeoutSeconds * 1000))
+    if (-not $Exited) {
+        try {
+            $Process.Kill()
+            [void]$Process.WaitForExit(5000)
+        }
+        catch { }
+        $Process.Dispose()
+        throw "$Label timed out after $CommandTimeoutSeconds seconds."
+    }
+    # Ensure redirected asynchronous output has been fully flushed after exit.
     $Process.WaitForExit()
     $Stdout = $StdoutTask.Result
     $Stderr = $StderrTask.Result
@@ -302,9 +314,10 @@ try {
 
         function Invoke-GovcFile {
             param([string]$FileName, [string[]]$CommandArguments)
+            Write-Host "Discovery phase: $FileName"
             Invoke-NativeCapture -Executable $GovcPath -CommandArguments $CommandArguments `
                 -Environment $GovcEnvironment -OutputFile (Join-Path $RawDirectory $FileName) `
-                -Label "read-only govc $($CommandArguments[0])"
+                -Label "read-only govc $($CommandArguments[0]) for $FileName"
         }
 
         Invoke-GovcFile -FileName "about.json" -CommandArguments @("about", "-json")
@@ -329,7 +342,7 @@ try {
                 }).Count -gt 0
             if ($Present) {
                 Invoke-GovcFile -FileName $FileName -CommandArguments @(
-                    @("object.collect", "-json", "-type", $CommandType, "/") + $Properties
+                    @("object.collect", "-json", "-n=0", "-type", $CommandType, "/") + $Properties
                 )
             }
             else {
@@ -410,9 +423,11 @@ if length == 1 then .[0].ref else "" end
             [System.IO.File]::WriteAllText($SourceDevicesPath, "{`"devices`":[]}`n", $Utf8NoBom)
         }
         else {
+            Write-Host "Discovery phase: source-devices.json"
             $DeviceJson = Invoke-NativeCapture -Executable $GovcPath -CommandArguments @(
                 "device.info", "-json", "-vm", $SourceRef
-            ) -Environment $GovcEnvironment -PassThru -Label "read-only govc device.info"
+            ) -Environment $GovcEnvironment -PassThru `
+                -Label "read-only govc device.info for source-devices.json"
             $DevicePayload = $DeviceJson | ConvertFrom-Json
             $SafeDevices = New-Object System.Collections.ArrayList
             foreach ($Device in @($DevicePayload.devices)) {

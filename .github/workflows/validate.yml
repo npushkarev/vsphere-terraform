@@ -101,9 +101,11 @@ jobs:
             -RedirectStandardError $VcsimError `
             -PassThru
           try {
+            Write-Host "Simulator phase: wait for TCP listener"
             $env:GOVC_URL = "https://127.0.0.1:8998/sdk"
             $env:GOVC_USERNAME = "simulator-user"
             $env:GOVC_PASSWORD = "simulator-password"
+            $env:GOVC_PERSIST_SESSION = "false"
             $SimulatorReady = $false
             for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
               if ($Vcsim.HasExited) { break }
@@ -125,23 +127,38 @@ jobs:
               Get-Content -LiteralPath $VcsimError -ErrorAction SilentlyContinue
               throw "vcsim did not become ready."
             }
-            $CertificateLines = @(& govc.exe about.cert -k -show)
-            if ($LASTEXITCODE -ne 0 -or $CertificateLines.Count -eq 0) {
+            Write-Host "Simulator phase: capture TLS certificate"
+            $CaPath = "$env:RUNNER_TEMP\vcsim-ca.pem"
+            $CertificateError = "$env:RUNNER_TEMP\vcsim-cert.stderr.log"
+            $CertificateProcess = Start-Process -FilePath "govc.exe" `
+              -ArgumentList @("about.cert", "-k", "-show") `
+              -RedirectStandardOutput $CaPath `
+              -RedirectStandardError $CertificateError `
+              -PassThru
+            if (-not $CertificateProcess.WaitForExit(60000)) {
+              Stop-Process -Id $CertificateProcess.Id -Force -ErrorAction SilentlyContinue
+              throw "TLS certificate capture timed out."
+            }
+            $CertificateProcess.WaitForExit()
+            if ($CertificateProcess.ExitCode -ne 0 -or
+                -not (Test-Path -LiteralPath $CaPath) -or
+                (Get-Item -LiteralPath $CaPath).Length -eq 0) {
+              Get-Content -LiteralPath $CertificateError -ErrorAction SilentlyContinue
               throw "Could not read the vcsim TLS certificate."
             }
-            $CaPath = "$env:RUNNER_TEMP\vcsim-ca.pem"
-            [System.IO.File]::WriteAllLines($CaPath, $CertificateLines, [System.Text.Encoding]::ASCII)
 
             Remove-Item Env:GOVC_URL -ErrorAction SilentlyContinue
             Remove-Item Env:GOVC_USERNAME -ErrorAction SilentlyContinue
             Remove-Item Env:GOVC_PASSWORD -ErrorAction SilentlyContinue
+            Remove-Item Env:GOVC_PERSIST_SESSION -ErrorAction SilentlyContinue
             $env:VSPHERE_SERVER = "127.0.0.1:8998"
             $env:VSPHERE_USER = "simulator-user"
             $env:VSPHERE_PASSWORD = "simulator-password"
             .\scripts\scan-vsphere.ps1 `
               -SourceVm "DC0_H0_VM0" `
               -OutputDirectory "$env:RUNNER_TEMP\vcsim-scan" `
-              -CaCert $CaPath
+              -CaCert $CaPath `
+              -CommandTimeoutSeconds 60
             & jq.exe -e `
               '.read_only == true and .counts.virtual_machines >= 1 and ((.inventory.networks | map(.ref) | length) == (.inventory.networks | map(.ref) | unique | length))' `
               "$env:RUNNER_TEMP\vcsim-scan\inventory.json"
@@ -150,6 +167,7 @@ jobs:
           finally {
             foreach ($Name in @(
                 "GOVC_URL", "GOVC_USERNAME", "GOVC_PASSWORD",
+                "GOVC_PERSIST_SESSION",
                 "VSPHERE_SERVER", "VSPHERE_USER", "VSPHERE_PASSWORD"
               )) {
               Remove-Item "Env:$Name" -ErrorAction SilentlyContinue

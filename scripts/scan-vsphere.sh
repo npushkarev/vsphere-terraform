@@ -221,7 +221,7 @@ else
     shift 3
     if "$jq_bin" -e --arg prefix "$inventory_type:" \
       'any(.[]; startswith($prefix))' "$raw_dir/objects.json" >/dev/null; then
-      run_govc object.collect -json -type "$command_type" / "$@" \
+      run_govc object.collect -json -n=0 -type "$command_type" / "$@" \
         > "$raw_dir/$output_file"
     else
       : > "$raw_dir/$output_file"

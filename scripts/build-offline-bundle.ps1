@@ -115,12 +115,13 @@ if ($LASTEXITCODE -ne 0) { throw "Provider mirror creation failed." }
 
 $RepoCommit = "unknown"
 $RepoDirty = $true
-$Git = Get-Command "git.exe" -CommandType Application -ErrorAction SilentlyContinue
-if ($Git) {
-    $CommitOutput = @(& $Git.Path -C $ProjectDir rev-parse HEAD 2>$null)
+$GitApplications = @(Get-Command "git.exe" -CommandType Application -ErrorAction SilentlyContinue)
+if ($GitApplications.Count -gt 0) {
+    $GitPath = $GitApplications[0].Path
+    $CommitOutput = @(& $GitPath -C $ProjectDir rev-parse HEAD 2>$null)
     if ($LASTEXITCODE -eq 0 -and $CommitOutput.Count -gt 0) {
         $RepoCommit = $CommitOutput[0].Trim()
-        $StatusOutput = @(& $Git.Path -C $ProjectDir status --porcelain --untracked-files=normal)
+        $StatusOutput = @(& $GitPath -C $ProjectDir status --porcelain --untracked-files=normal)
         if ($LASTEXITCODE -eq 0 -and $StatusOutput.Count -eq 0) { $RepoDirty = $false }
     }
 }

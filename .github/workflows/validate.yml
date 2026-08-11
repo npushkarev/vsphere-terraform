@@ -86,6 +86,25 @@ jobs:
           Expand-Archive -LiteralPath $VcsimArchive -DestinationPath $VcsimDir
           $VcsimLog = "$env:RUNNER_TEMP\vcsim.stdout.log"
           $VcsimError = "$env:RUNNER_TEMP\vcsim.stderr.log"
+          $CertificateValidatorSource = @'
+          using System.Net.Security;
+          using System.Security.Cryptography.X509Certificates;
+
+          public static class VcsimCertificateValidator
+          {
+              public static readonly RemoteCertificateValidationCallback AcceptLoopback =
+                  delegate(
+                      object sender,
+                      X509Certificate certificate,
+                      X509Chain chain,
+                      SslPolicyErrors errors
+                  )
+                  {
+                      return true;
+                  };
+          }
+          '@
+          Add-Type -TypeDefinition $CertificateValidatorSource
           $Vcsim = Start-Process -FilePath (Join-Path $VcsimDir "vcsim.exe") `
             -ArgumentList @(
               "-l", "127.0.0.1:8998",
@@ -145,10 +164,7 @@ jobs:
                 throw "TLS certificate connection timed out after 5 seconds."
               }
               $CertificateTcp.EndConnect($ConnectResult)
-              $AcceptSimulatorCertificate = {
-                param($Sender, $Certificate, $Chain, $SslPolicyErrors)
-                return $true
-              } -as [System.Net.Security.RemoteCertificateValidationCallback]
+              $AcceptSimulatorCertificate = [VcsimCertificateValidator]::AcceptLoopback
               $CertificateStream = New-Object `
                 -TypeName System.Net.Security.SslStream `
                 -ArgumentList @(

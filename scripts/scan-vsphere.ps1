@@ -430,8 +430,8 @@ try {
         Invoke-GovcCollectIfPresent -FileName "distributed-portgroups.jsonseq" `
             -InventoryType "DistributedVirtualPortgroup" -CommandType "g" `
             -Properties @("name", "parent", "summary.accessible", "config.distributedVirtualSwitch")
-        Invoke-GovcCollectIfPresent -FileName "opaque-networks.jsonseq" `
-            -InventoryType "OpaqueNetwork" -CommandType "o" `
+        Invoke-GovcCollectEachIfPresent -FileName "opaque-networks.jsonseq" `
+            -InventoryType "OpaqueNetwork" `
             -Properties @("name", "parent", "summary.accessible")
         Invoke-GovcCollectIfPresent -FileName "virtual-machines.jsonseq" `
             -InventoryType "VirtualMachine" -CommandType "m" `

@@ -283,7 +283,7 @@ else
     name parent summary.accessible
   collect_if_present distributed-portgroups.jsonseq DistributedVirtualPortgroup g \
     name parent summary.accessible config.distributedVirtualSwitch
-  collect_if_present opaque-networks.jsonseq OpaqueNetwork o \
+  collect_each_if_present opaque-networks.jsonseq OpaqueNetwork \
     name parent summary.accessible
   collect_if_present virtual-machines.jsonseq VirtualMachine m \
     name parent runtime.powerState runtime.host resourcePool datastore network \

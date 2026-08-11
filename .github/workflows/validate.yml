@@ -44,7 +44,10 @@ jobs:
           TF_CLI_CONFIG_FILE="$install_dir/terraform.rc" \
             "$install_dir/bin/terraform" -chdir="$RUNNER_TEMP/offline-stack" \
             init -backend=false -lockfile=readonly -input=false
-          "$install_dir/bin/terraform" -chdir="$RUNNER_TEMP/offline-stack" validate
+          VSPHERE_USER=offline-validation VSPHERE_PASSWORD=offline-validation \
+            VSPHERE_SERVER=offline-validation.invalid \
+            TF_CLI_CONFIG_FILE="$install_dir/terraform.rc" \
+            "$install_dir/bin/terraform" -chdir="$RUNNER_TEMP/offline-stack" validate
 
   windows:
     runs-on: windows-latest
@@ -162,6 +165,9 @@ jobs:
           Copy-Item -Path .\stacks\inventory\*.tf -Destination $OfflineStack
           Copy-Item -LiteralPath .\stacks\inventory\.terraform.lock.hcl -Destination $OfflineStack
           $env:TF_CLI_CONFIG_FILE = Join-Path $InstallDir "terraform.rc"
+          $env:VSPHERE_USER = "offline-validation"
+          $env:VSPHERE_PASSWORD = "offline-validation"
+          $env:VSPHERE_SERVER = "offline-validation.invalid"
           & (Join-Path $InstallDir "bin\terraform.exe") "-chdir=$OfflineStack" `
             init -backend=false -lockfile=readonly -input=false
           if ($LASTEXITCODE -ne 0) { throw "Offline Terraform init failed." }

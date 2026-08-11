@@ -22,12 +22,14 @@ function Invoke-Terraform {
     }
 }
 
-$Govc = (Get-Command "govc.exe" -CommandType Application -ErrorAction Stop).Path
+$GovcApplications = @(Get-Command "govc.exe" -CommandType Application -ErrorAction Stop)
+$Govc = $GovcApplications[0].Path
 $GovcActual = @(& $Govc version)
 if ($LASTEXITCODE -ne 0 -or ($GovcActual -join "`n").Trim() -cne "govc $ExpectedGovcVersion") {
     throw "Unexpected govc version."
 }
-$Jq = (Get-Command "jq.exe" -CommandType Application -ErrorAction Stop).Path
+$JqApplications = @(Get-Command "jq.exe" -CommandType Application -ErrorAction Stop)
+$Jq = $JqApplications[0].Path
 $JqActual = @(& $Jq --version)
 if ($LASTEXITCODE -ne 0 -or ($JqActual -join "`n").Trim() -cne "jq-$ExpectedJqVersion") {
     throw "Unexpected jq version."

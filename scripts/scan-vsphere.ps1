@@ -162,7 +162,8 @@ function Protect-PrivateDirectory {
     [System.IO.Directory]::SetAccessControl($Path, $Security)
 }
 
-$JqPath = (Get-Command $Jq -CommandType Application -ErrorAction Stop).Path
+$JqApplications = @(Get-Command $Jq -CommandType Application -ErrorAction Stop)
+$JqPath = $JqApplications[0].Path
 $ActualJqVersion = (Invoke-NativeCapture -Executable $JqPath `
         -CommandArguments @("--version") -PassThru -Label "jq version").Trim()
 if ($ActualJqVersion -cne "jq-$ExpectedJqVersion") {
@@ -256,7 +257,8 @@ try {
         $Server = $ParsedUri.Authority
         $GovcUrl = "https://$Server/sdk"
 
-        $GovcPath = (Get-Command $Govc -CommandType Application -ErrorAction Stop).Path
+        $GovcApplications = @(Get-Command $Govc -CommandType Application -ErrorAction Stop)
+        $GovcPath = $GovcApplications[0].Path
         $ActualGovcVersion = (Invoke-NativeCapture -Executable $GovcPath `
                 -CommandArguments @("version") -PassThru -Label "govc version").Trim()
         if ($ActualGovcVersion -cne "govc $ExpectedGovcVersion") {

@@ -33,11 +33,12 @@ function Protect-PrivateDirectory {
     param([Parameter(Mandatory = $true)][string]$Path)
     $Sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     $Acl = New-Object -TypeName System.Security.AccessControl.DirectorySecurity
+    $Inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor `
+        [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
     $Rule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList @(
         $Sid,
         [System.Security.AccessControl.FileSystemRights]::FullControl,
-        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor `
-            [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+        $Inheritance,
         [System.Security.AccessControl.PropagationFlags]::None,
         [System.Security.AccessControl.AccessControlType]::Allow
     )

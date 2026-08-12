@@ -141,7 +141,9 @@ class LayoutAndCommandTests(LauncherTestCase):
                 captured["command"] = command
                 captured["cwd"] = cwd
 
-            with mock.patch.object(launcher, "run_process", side_effect=fake_run):
+            with mock.patch.object(launcher, "run_process", side_effect=fake_run), mock.patch(
+                "builtins.print"
+            ):
                 launcher.command_install(layout, args)
             self.assertEqual(captured["command"][0], "/bin/sh")
             self.assertTrue(captured["command"][1].endswith("install-repo-offline.sh"))

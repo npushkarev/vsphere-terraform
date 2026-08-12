@@ -17,6 +17,9 @@ for script_file in "$project_dir"/scripts/*.sh; do
 done
 python3 -B -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)'
 python3 -B -m unittest discover -s "$project_dir/tests" -p 'test_*.py' -v
+if command -v actionlint >/dev/null 2>&1; then
+  actionlint "$project_dir/.github/workflows/validate.yml"
+fi
 "$project_dir/scripts/verify-vendor.sh" "$project_dir"
 if grep -E 'curl|wget|providers[[:space:]]+mirror' \
   "$project_dir/scripts/build-offline-bundle.sh" >/dev/null; then

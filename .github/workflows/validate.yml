@@ -36,9 +36,6 @@ jobs:
           HTTP_PROXY: http://127.0.0.1:1
           HTTPS_PROXY: http://127.0.0.1:1
           ALL_PROXY: http://127.0.0.1:1
-          http_proxy: http://127.0.0.1:1
-          https_proxy: http://127.0.0.1:1
-          all_proxy: http://127.0.0.1:1
         run: |
           python3 ./vsphere.py install
           python3 ./vsphere.py check
@@ -93,9 +90,6 @@ jobs:
           HTTP_PROXY: http://127.0.0.1:1
           HTTPS_PROXY: http://127.0.0.1:1
           ALL_PROXY: http://127.0.0.1:1
-          http_proxy: http://127.0.0.1:1
-          https_proxy: http://127.0.0.1:1
-          all_proxy: http://127.0.0.1:1
         run: |
           python .\vsphere.py install
           if ($LASTEXITCODE -ne 0) { throw "Repo-local install failed." }

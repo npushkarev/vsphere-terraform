@@ -1,0 +1,16 @@
+{
+  "archives": {
+    "linux_amd64": {
+      "hashes": [
+        "h1:NqhmPpFOGd8Rq0zJg7UXwK+M2phxoOddsuU+jZ15STc="
+      ],
+      "url": "terraform-provider-vsphere_2.15.1_linux_amd64.zip"
+    },
+    "windows_amd64": {
+      "hashes": [
+        "h1:su0I3fBUqTOjthalY+NT5kPf4RPqBbFjOOIuQRGQCNw="
+      ],
+      "url": "terraform-provider-vsphere_2.15.1_windows_amd64.zip"
+    }
+  }
+}

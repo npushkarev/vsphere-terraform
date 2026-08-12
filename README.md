@@ -32,49 +32,60 @@ Provider зафиксирован строго на `2.15.1`: это после�
 - `scripts` — установка, проверка, plan/apply и offline bundle.
 - `scripts/scan-vsphere.*` — полный read-only discovery для Debian/Windows.
 - `vsphere.py` — единое интерактивное меню для Debian/Windows.
+- `vendor` — Terraform, govc, jq и vSphere provider для обеих x64-платформ.
 
-## 1. Установка инструментов
+## 1. Закрытый контур: установка без интернета
 
-Сначала клонируйте приватный репозиторий и перейдите в него:
+Обычная копия этого репозитория уже содержит все закреплённые бинарные файлы.
+Они хранятся как обычные Git-объекты, не Git LFS, поэтому после утверждённого
+клонирования или переноса `git bundle` никакой дополнительный download не нужен.
+Объём `vendor/` — около 127 МиБ; самый большой отдельный файл — около 34 МиБ.
+
+В открытом контуре клонируйте репозиторий один раз, затем перенесите всю рабочую
+копию или Git bundle утверждённым способом:
 
 ```sh
 gh repo clone npushkarev/vsphere-terraform
 cd vsphere-terraform
 ```
 
-Debian Linux x64:
+Внутри Debian/Astra Linux x64 нужны только уже имеющиеся системные утилиты
+`python3` 3.9+, `sha256sum`, `gpg`, `unzip`, `tar`, `install` и `awk`:
 
 ```sh
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl unzip gnupg make python3
-make install
-export PATH="$HOME/.local/bin:$PATH"
-terraform version
-govc version
-jq --version
+python3 ./vsphere.py install
+python3 ./vsphere.py check
+python3 ./vsphere.py
 ```
 
-Windows x64, обычный PowerShell — WSL не нужен:
+Windows x64, обычный Windows PowerShell 5.1 — WSL и права администратора не нужны:
 
 ```powershell
-$Tools = "$env:LOCALAPPDATA\Programs\vsphere-tools"
-.\scripts\install-terraform.ps1 -BinDir $Tools
-.\scripts\install-govc.ps1 -BinDir $Tools
-.\scripts\install-jq.ps1 -BinDir $Tools
-$env:Path = "$Tools;$env:Path"
-terraform version
-govc version
-jq --version
+python .\vsphere.py install
+python .\vsphere.py check
+python .\vsphere.py
 ```
 
-Установщики не вызывают `sudo` и проверяют закреплённые SHA-256 официальных
-архивов. Linux Terraform дополнительно проверяется по подписанному HashiCorp
-checksum.
+Команда `install` сначала проверяет точный набор и SHA-256 всех файлов
+`vendor/`, затем локально распаковывает инструменты в игнорируемый каталог
+`.vsphere-tools/<platform>`. Она не содержит сетевой ветки, не вызывает `sudo`
+и создаёт `terraform.rc` только с локальным `filesystem_mirror`, без `direct {}`.
+Linux Terraform дополнительно проверяется по подписанному HashiCorp checksum.
+Python-запускалка сама находит этот toolchain; менять `PATH` не требуется.
+
+Проверить payload без установки:
+
+```sh
+python3 ./vsphere.py install --verify-only
+```
+
+Доверие к происхождению задаётся утверждённым commit/tag или его подписью,
+переданной отдельным внутренним каналом. Вложенный manifest защищает от
+повреждения, но сам по себе не является независимой подписью.
 
 ### Единая Python-запускалка
 
-Если нужен один интерфейс вместо отдельных shell/PowerShell-команд, установите
-Python 3.9+ и запустите интерактивное меню:
+Для повторного запуска интерактивного меню:
 
 ```sh
 python3 vsphere.py
@@ -86,7 +97,7 @@ Windows:
 python .\vsphere.py
 ```
 
-Запускалка умеет проверить инструменты, выполнить read-only scan, открыть
+Запускалка умеет локально установить и проверить инструменты, выполнить read-only scan, открыть
 проверенный отчёт, создать plan и применить только ранее проверенный plan через
 защитные wrapper-скрипты. Пароль запрашивается скрыто и не передаётся в
 аргументах командной строки. Подробности: [docs/python-launcher.md](docs/python-launcher.md).
@@ -128,7 +139,9 @@ vCenter с наследованием. Сканер запускаете вы в
 Debian:
 
 ```sh
-./scripts/scan-vsphere.sh \
+python3 ./vsphere.py scan \
+  --server 'incvc.inc.elara.local' \
+  --user '<read-only-account>' \
   --source-vm 'tst-win-10-12' \
   --output-dir '/private/path/vsphere-scan' \
   --ca-cert '/private/path/internal-ca.pem'
@@ -137,10 +150,12 @@ Debian:
 Windows:
 
 ```powershell
-.\scripts\scan-vsphere.ps1 `
-  -SourceVm "tst-win-10-12" `
-  -OutputDirectory "C:\Private\vsphere-scan" `
-  -CaCert "C:\Private\internal-ca.pem"
+python .\vsphere.py scan `
+  --server "incvc.inc.elara.local" `
+  --user "<read-only-account>" `
+  --source-vm "tst-win-10-12" `
+  --output-dir "C:\Private\vsphere-scan" `
+  --ca-cert "C:\Private\internal-ca.pem"
 ```
 
 Результат содержит Markdown-отчёт, дерево, JSON и безопасную заготовку
@@ -153,14 +168,15 @@ Windows:
 
 ```sh
 cp stacks/inventory/inventory.tfvars.example /private/path/inventory.tfvars
-terraform -chdir=stacks/inventory init
-./scripts/plan.sh inventory /private/path/inventory.tfvars
+python3 ./vsphere.py plan --stack inventory \
+  --var-file /private/path/inventory.tfvars
 ```
 
 Windows-эквивалент:
 
 ```powershell
-.\scripts\plan.ps1 -Stack inventory -VarFile C:\private\inventory.tfvars
+python .\vsphere.py plan --stack inventory `
+  --var-file C:\private\inventory.tfvars
 ```
 
 Скрипт проверяет JSON plan и завершится ошибкой, если в inventory появится хотя
@@ -175,28 +191,26 @@ Windows-эквивалент:
 4. Добавьте VM в map и создайте сохранённый plan.
 
 ```sh
-terraform -chdir=stacks/vm-clones init
-./scripts/plan.sh vm-clones /private/path/vm-clones.tfvars
+python3 ./vsphere.py plan --stack vm-clones \
+  --var-file /private/path/vm-clones.tfvars
 ```
 
 Скрипт напечатает путь сохранённого `.tfplan`. Внимательно просмотрите его:
 
 ```sh
-terraform -chdir=stacks/vm-clones show /absolute/path/to/saved.tfplan
+python3 ./vsphere.py show /absolute/path/to/saved.tfplan
 ```
 
 Применение разрешено только из сохранённого plan и только с явным флагом:
 
 ```sh
-ALLOW_VM_APPLY=yes ./scripts/apply-reviewed-plan.sh \
-  /absolute/path/to/saved.tfplan
+python3 ./vsphere.py apply /absolute/path/to/saved.tfplan
 ```
 
 Windows:
 
 ```powershell
-$env:ALLOW_VM_APPLY = "yes"
-.\scripts\apply-reviewed-plan.ps1 -Plan C:\absolute\path\to\saved.tfplan
+python .\vsphere.py apply C:\absolute\path\to\saved.tfplan
 ```
 
 Любое действие `delete` блокируется wrapper-скриптами, а VM защищены
@@ -216,14 +230,14 @@ $env:ALLOW_VM_APPLY = "yes"
 ```sh
 cp stacks/windows-clone/windows-clone.tfvars.example \
   /private/path/windows-clone.tfvars
-./scripts/plan.sh windows-clone /private/path/windows-clone.tfvars
+python3 ./vsphere.py plan --stack windows-clone \
+  --var-file /private/path/windows-clone.tfvars
 ```
 
 После проверки сохранённого plan:
 
 ```sh
-ALLOW_WINDOWS_CLONE_APPLY=yes ./scripts/apply-reviewed-plan.sh \
-  /absolute/path/to/saved.tfplan
+python3 ./vsphere.py apply /absolute/path/to/saved.tfplan
 ```
 
 Wrapper принимает только no-op или ровно один create Windows-клона. Полная
@@ -241,3 +255,5 @@ state и plan-файлы игнорируются Git, но всё равно с
 
 Для Debian/Windows/Astra/TeamCity без интернета используйте
 [docs/offline.md](docs/offline.md).
+Процесс редкого обновления самих бинарников вынесен в
+[docs/vendor-maintenance.md](docs/vendor-maintenance.md).

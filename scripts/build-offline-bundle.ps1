@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Terraform = "terraform")
+param()
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -14,54 +14,40 @@ if ([string]::IsNullOrWhiteSpace($NativeArchitecture)) {
 if ($NativeArchitecture -cne "AMD64") { throw "This builder supports Windows x64 only." }
 $env:CHECKPOINT_DISABLE = "1"
 $ProjectDir = Split-Path -Parent $PSScriptRoot
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor `
-    [Net.SecurityProtocolType]::Tls12
 $Utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
 
 $Version = (Get-Content -LiteralPath (Join-Path $ProjectDir ".terraform-version") -Raw).Trim()
 $GovcVersion = (Get-Content -LiteralPath (Join-Path $ProjectDir ".govc-version") -Raw).Trim()
 $JqVersion = (Get-Content -LiteralPath (Join-Path $ProjectDir ".jq-version") -Raw).Trim()
-$TerraformVersionOutput = @(& $Terraform version)
-if ($LASTEXITCODE -ne 0 -or $TerraformVersionOutput.Count -eq 0 -or
-    $TerraformVersionOutput[0].Trim() -cne "Terraform v$Version") {
-    throw "Expected Terraform $Version for bundle creation."
-}
 $Platform = "windows_amd64"
 $ArchiveName = "terraform_${Version}_${Platform}.zip"
-$PinnedSha256 = "2FF41D2129AFB1982733C132C61A8D6EF038F879F3AEEDE7FC28B8B8B24ACF02"
 $GovcArchiveName = "govc_Windows_x86_64.zip"
-$GovcPinnedSha256 = "4ABB6CBD441311F2D9FFDB37F00497A44CEF7DFFA4BD1CE38D59E526D52CDD70"
 $JqBinaryName = "jq-windows-amd64.exe"
-$JqPinnedSha256 = "A6FC67FEDAF9128A3309A1E2EBB8B986AECCF70122EE46D2CB4849E423F0C627"
 $OutputRoot = Join-Path $ProjectDir "offline-dist"
 $BundleName = "vsphere-terraform-$Version-govc-$GovcVersion-jq-$JqVersion-$Platform"
 $Stage = Join-Path $OutputRoot $BundleName
 
 if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
-New-Item -ItemType Directory -Force -Path (Join-Path $Stage "provider-mirror") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "lockfiles") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "scanner\schemas") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $Stage "licenses") | Out-Null
 
+& (Join-Path $PSScriptRoot "verify-vendor.ps1") -ProjectDir $ProjectDir
 $ArchivePath = Join-Path $Stage $ArchiveName
-$Uri = "https://releases.hashicorp.com/terraform/$Version/$ArchiveName"
-Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $ArchivePath
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath $ArchivePath).Hash -cne $PinnedSha256) {
-    throw "Terraform archive checksum mismatch."
-}
-
+Copy-Item -LiteralPath (Join-Path $ProjectDir "vendor\terraform\$Version\$ArchiveName") `
+    -Destination $ArchivePath
 $GovcArchivePath = Join-Path $Stage $GovcArchiveName
-$GovcUri = "https://github.com/vmware/govmomi/releases/download/v$GovcVersion/$GovcArchiveName"
-Invoke-WebRequest -UseBasicParsing -Uri $GovcUri -OutFile $GovcArchivePath
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath $GovcArchivePath).Hash -cne $GovcPinnedSha256) {
-    throw "govc archive checksum mismatch."
-}
-
+Copy-Item -LiteralPath (Join-Path $ProjectDir "vendor\govc\$GovcVersion\$GovcArchiveName") `
+    -Destination $GovcArchivePath
 $JqBinaryPath = Join-Path $Stage $JqBinaryName
-$JqUri = "https://github.com/jqlang/jq/releases/download/jq-$JqVersion/$JqBinaryName"
-Invoke-WebRequest -UseBasicParsing -Uri $JqUri -OutFile $JqBinaryPath
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath $JqBinaryPath).Hash -cne $JqPinnedSha256) {
-    throw "jq binary checksum mismatch."
-}
+Copy-Item -LiteralPath (Join-Path $ProjectDir "vendor\jq\$JqVersion\$JqBinaryName") `
+    -Destination $JqBinaryPath
+Copy-Item -LiteralPath (Join-Path $ProjectDir "vendor\provider-mirror") `
+    -Destination (Join-Path $Stage "provider-mirror") -Recurse
+Copy-Item -Path (Join-Path $ProjectDir "vendor\licenses\*") `
+    -Destination (Join-Path $Stage "licenses") -Recurse
+Copy-Item -LiteralPath (Join-Path $ProjectDir "vendor\provenance.json") `
+    -Destination (Join-Path $Stage "vendor-provenance.json")
 
 foreach ($VersionFile in @(".terraform-version", ".govc-version", ".jq-version")) {
     Copy-Item -LiteralPath (Join-Path $ProjectDir $VersionFile) -Destination $Stage
@@ -110,16 +96,6 @@ Copy-Item -LiteralPath (Join-Path $ProjectDir "stacks\vm-clones\.terraform.lock.
     -Destination (Join-Path $Stage "lockfiles\vm-clones.lock.hcl")
 Copy-Item -LiteralPath (Join-Path $ProjectDir "stacks\windows-clone\.terraform.lock.hcl") `
     -Destination (Join-Path $Stage "lockfiles\windows-clone.lock.hcl")
-
-$TerraformArguments = @(
-    "-chdir=$(Join-Path $ProjectDir 'stacks\inventory')",
-    "providers",
-    "mirror",
-    "-platform=$Platform",
-    (Join-Path $Stage "provider-mirror")
-)
-& $Terraform @TerraformArguments
-if ($LASTEXITCODE -ne 0) { throw "Provider mirror creation failed." }
 
 $RepoCommit = "unknown"
 $RepoDirty = $true

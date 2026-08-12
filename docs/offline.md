@@ -1,15 +1,49 @@
 # Offline: Debian/Windows/Astra/TeamCity
 
-Builder запускается на доверенной машине с интернетом. Он скачивает строго
-закреплённые версии, проверяет их и собирает переносимый пакет. На целевой
-закрытой машине installer и scanner не выполняют сетевых загрузок.
+Репозиторий уже содержит строго закреплённые архивы и provider mirror. Обычная
+Git-копия полностью автономна: repo-installer, bundle builder и scanner не
+скачивают инструменты. Сеть во время scan нужна только до указанного vCenter;
+plan/apply также обращаются к настроенному backend и vCenter.
 
 Поддерживаемые target-платформы:
 
 - `linux_amd64` — Debian/Astra Linux x64;
 - `windows_amd64` — Windows x64, Windows PowerShell 5.1.
 
-## Сборка снаружи закрытого контура
+## Самый короткий путь: установка прямо из репозитория
+
+После утверждённого переноса полной рабочей копии запустите внутри контура:
+
+```sh
+python3 ./vsphere.py install
+python3 ./vsphere.py check
+```
+
+```powershell
+python .\vsphere.py install
+python .\vsphere.py check
+```
+
+Инструменты устанавливаются в `.vsphere-tools/linux_amd64` либо
+`.vsphere-tools/windows_amd64`; каталог игнорируется Git. Launcher использует
+только этот repo-local toolchain и локальный `terraform.rc`, поэтому экспорт
+`PATH`/`TF_CLI_CONFIG_FILE` не требуется.
+
+Проверка всех vendored-файлов без установки:
+
+```sh
+./scripts/verify-vendor.sh
+```
+
+```powershell
+.\scripts\verify-vendor.ps1
+```
+
+## Сборка переносимого пакета без интернета
+
+Если вместо полной рабочей копии нужен отдельный пакет, builder только проверяет
+`vendor/MANIFEST.sha256`, копирует локальные файлы и упаковывает их. Ему не
+нужны Terraform, GitHub, Terraform Registry или другая внешняя сеть.
 
 Linux bundle:
 
@@ -23,8 +57,7 @@ Windows bundle:
 .\scripts\build-offline-bundle.ps1
 ```
 
-Builder требует интернет для официальных HashiCorp/GitHub releases и Terraform
-Registry. Результат в `offline-dist/` содержит:
+Результат в `offline-dist/` содержит:
 
 - Terraform CLI `1.15.8`;
 - filesystem mirror `vmware/vsphere = 2.15.1` без `direct {}` fallback;
@@ -34,9 +67,10 @@ Registry. Результат в `offline-dist/` содержит:
 - lock-файлы всех трёх Terraform stacks;
 - `bundle-info.json` и внутренний `MANIFEST.sha256`.
 
-Linux Terraform проверяется по подписанному HashiCorp `SHA256SUMS` и
-закреплённому SHA. Windows Terraform, govc и jq проверяются по SHA, закреплённым
-в репозитории. Upstream release assets govc не имеют отдельной
+Linux Terraform проверяется по уже сохранённому подписанному HashiCorp
+`SHA256SUMS` и закреплённому SHA. Windows Terraform, govc, jq и оба provider
+package проверяются по SHA, закреплённым в `vendor/MANIFEST.sha256` и
+`vendor/provenance.json`. Upstream release assets govc не имеют отдельной
 криптографической подписи.
 
 Рядом с archive builder создаёт внешний файл `.sha256`. Передайте его значение
@@ -60,9 +94,10 @@ Windows использует встроенные PowerShell 5.1, `Expand-Archiv
 Для единой Python-запускалки заранее установите Python 3.9+ из доверенного
 внутреннего образа или package mirror; `pip` и сторонние Python-пакеты не нужны.
 
-Передайте archive, рабочую копию репозитория и публичный PEM внутреннего CA
-утверждённым каналом. Репозиторий нужен для Terraform stacks; для одного скана
-достаточно standalone scanner внутри bundle.
+Передайте полную рабочую копию репозитория (не Git LFS pointers), либо созданный
+archive, и публичный PEM внутреннего CA утверждённым каналом. Репозиторий нужен
+для Terraform stacks; для одного скана достаточно standalone scanner внутри
+bundle.
 
 ## Установка внутри Debian-контура
 
@@ -168,6 +203,10 @@ terraform -chdir=stacks/windows-clone init -backend=false -lockfile=readonly
 terraform -chdir=stacks/windows-clone validate
 ```
 
-Provider binaries и offline archives не коммитятся в Git. Lock-файлы
-коммитятся и проверяют package checksums. Scan reports, `.tfvars`, state и saved
-plans также нельзя коммитить или публиковать как CI artifacts.
+Provider packages и исходные offline archives намеренно коммитятся в `vendor/`
+как обычные Git-объекты, чтобы clone был самодостаточным. Сгенерированные
+`offline-dist/` bundles не коммитятся, иначе бинарники дублировались бы. Lock-файлы
+коммитятся и дополнительно проверяют package checksums. Scan reports, `.tfvars`,
+state и saved plans нельзя коммитить или публиковать как CI artifacts.
+
+Порядок обновления закреплённых бинарников: [vendor-maintenance.md](vendor-maintenance.md).

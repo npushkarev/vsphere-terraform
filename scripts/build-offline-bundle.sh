@@ -6,17 +6,10 @@ export CHECKPOINT_DISABLE=1
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-tf_bin=${TF_BIN:-terraform}
 platform=${1:-linux_amd64}
 version=$(tr -d '[:space:]' < "$project_dir/.terraform-version")
 govc_version=$(tr -d '[:space:]' < "$project_dir/.govc-version")
 jq_version=$(tr -d '[:space:]' < "$project_dir/.jq-version")
-
-tf_first_line=$("$tf_bin" version | sed -n '1p')
-[ "$tf_first_line" = "Terraform v$version" ] || {
-  echo "expected Terraform $version for bundle creation" >&2
-  exit 1
-}
 
 case "$platform" in
   linux_amd64)
@@ -34,7 +27,6 @@ arch=${platform#*_}
 archive="terraform_${version}_${os}_${arch}.zip"
 checksums="terraform_${version}_SHA256SUMS"
 signature="${checksums}.72D7468F.sig"
-release_base="https://releases.hashicorp.com/terraform/${version}"
 output_root="$project_dir/offline-dist"
 bundle_name="vsphere-terraform-${version}-govc-${govc_version}-jq-${jq_version}-${platform}"
 mkdir -p "$output_root"
@@ -45,21 +37,18 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-mkdir -p "$stage/keys" "$stage/provider-mirror" "$stage/lockfiles" \
-  "$stage/scanner" "$stage/scanner/schemas"
+mkdir -p "$stage/keys" "$stage/lockfiles" "$stage/scanner" \
+  "$stage/scanner/schemas" "$stage/licenses"
 
-download() {
-  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
-    "$1" --output "$2"
-}
-
-download "$release_base/$archive" "$stage/$archive"
-download "$release_base/$checksums" "$stage/$checksums"
-download "$release_base/$signature" "$stage/$signature"
-download "https://github.com/vmware/govmomi/releases/download/v${govc_version}/${govc_archive}" \
-  "$stage/$govc_archive"
-download "https://github.com/jqlang/jq/releases/download/jq-${jq_version}/${jq_binary}" \
-  "$stage/$jq_binary"
+"$project_dir/scripts/verify-vendor.sh" "$project_dir"
+cp "$project_dir/vendor/terraform/$version/$archive" "$stage/$archive"
+cp "$project_dir/vendor/terraform/$version/$checksums" "$stage/$checksums"
+cp "$project_dir/vendor/terraform/$version/$signature" "$stage/$signature"
+cp "$project_dir/vendor/govc/$govc_version/$govc_archive" "$stage/$govc_archive"
+cp "$project_dir/vendor/jq/$jq_version/$jq_binary" "$stage/$jq_binary"
+cp -R "$project_dir/vendor/provider-mirror" "$stage/provider-mirror"
+cp -R "$project_dir/vendor/licenses/." "$stage/licenses/"
+cp "$project_dir/vendor/provenance.json" "$stage/vendor-provenance.json"
 
 cp "$project_dir/keys/hashicorp-releases.asc" "$stage/keys/"
 cp "$project_dir/scripts/install-terraform.sh" "$stage/"
@@ -97,7 +86,8 @@ fingerprint=$(gpg --batch --homedir "$gpg_home" --with-colons \
   echo "unexpected HashiCorp signing-key fingerprint" >&2
   exit 1
 }
-gpg --batch --homedir "$gpg_home" --import "$stage/keys/hashicorp-releases.asc" >/dev/null 2>&1
+gpg --batch --homedir "$gpg_home" --import \
+  "$stage/keys/hashicorp-releases.asc" >/dev/null 2>&1 || true
 gpg --batch --homedir "$gpg_home" --verify "$stage/$signature" "$stage/$checksums" >/dev/null 2>&1
 signed_sha=$(awk -v name="$archive" '$2 == name { print $1; exit }' "$stage/$checksums")
 [ "$signed_sha" = "$pinned_sha" ] || { echo "signed checksum mismatch" >&2; exit 1; }
@@ -117,9 +107,6 @@ else
 fi
 [ "$actual_govc_sha" = "$govc_sha" ] || { echo "govc archive checksum mismatch" >&2; exit 1; }
 [ "$actual_jq_sha" = "$jq_sha" ] || { echo "jq binary checksum mismatch" >&2; exit 1; }
-
-"$tf_bin" -chdir="$project_dir/stacks/inventory" providers mirror \
-  -platform="$platform" "$stage/provider-mirror"
 
 rm -rf -- "$gpg_home"
 

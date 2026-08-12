@@ -17,6 +17,18 @@ for script_file in "$project_dir"/scripts/*.sh; do
 done
 python3 -B -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)'
 python3 -B -m unittest discover -s "$project_dir/tests" -p 'test_*.py' -v
+"$project_dir/scripts/verify-vendor.sh" "$project_dir"
+if grep -E 'curl|wget|providers[[:space:]]+mirror' \
+  "$project_dir/scripts/build-offline-bundle.sh" >/dev/null; then
+  echo "offline bundle builder must not contain network/download commands" >&2
+  exit 1
+fi
+if grep -E 'curl|wget|https?://' \
+  "$project_dir/scripts/install-repo-offline.sh" \
+  "$project_dir/scripts/verify-vendor.sh" >/dev/null; then
+  echo "repo-local installer and verifier must not contain network calls" >&2
+  exit 1
+fi
 expected_govc=$(tr -d '[:space:]' < "$project_dir/.govc-version")
 expected_jq=$(tr -d '[:space:]' < "$project_dir/.jq-version")
 [ "$("$govc_bin" version)" = "govc $expected_govc" ] || {

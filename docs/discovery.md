@@ -39,40 +39,32 @@ vCenter и включите наследование на дочерние об�
 или передайте публичный PEM через параметр `--ca-cert`/`-CaCert`.
 `GOVC_INSECURE=true` и `VSPHERE_ALLOW_UNVERIFIED_SSL=true` сканер отклоняет.
 
-## Установка на машине с интернетом
+## Установка из полной копии репозитория без интернета
 
 Debian x64:
 
 ```sh
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl unzip gnupg make
-make install
-export PATH="$HOME/.local/bin:$PATH"
-terraform version
-govc version
-jq --version
+python3 ./vsphere.py install
+python3 ./vsphere.py check
 ```
 
 Windows x64, Windows PowerShell 5.1:
 
 ```powershell
-$Tools = "$env:LOCALAPPDATA\Programs\vsphere-tools"
-.\scripts\install-terraform.ps1 -BinDir $Tools
-.\scripts\install-govc.ps1 -BinDir $Tools
-.\scripts\install-jq.ps1 -BinDir $Tools
-$env:Path = "$Tools;$env:Path"
-terraform version
-govc version
-jq --version
+python .\vsphere.py install
+python .\vsphere.py check
 ```
 
 Версии закреплены в `.terraform-version`, `.govc-version` и `.jq-version`.
-Installers проверяют SHA-256; Linux Terraform дополнительно проверяется по
-подписанному HashiCorp checksum.
+Бинарники обеих x64-платформ и provider mirror находятся в `vendor/`.
+Repo-installer проверяет точный manifest/SHA-256; Linux Terraform дополнительно
+проверяется по сохранённому подписанному HashiCorp checksum. Сетевых загрузок
+нет, `PATH` менять не нужно.
 
 ## Подготовка полностью offline
 
-На доверенной машине с интернетом соберите пакет для нужной ОС:
+Если вместо полной репы нужен standalone-пакет, соберите его из уже vendored
+файлов; сеть builder-у не нужна:
 
 ```sh
 make offline-bundle PLATFORM=linux_amd64
@@ -122,7 +114,7 @@ read -r -s -p 'Пароль vCenter: ' VSPHERE_PASSWORD
 export VSPHERE_PASSWORD
 printf '\n'
 
-./scripts/scan-vsphere.sh \
+python3 ./vsphere.py scan \
   --source-vm 'tst-win-10-12' \
   --output-dir '/secure/path/vsphere-scan' \
   --ca-cert '/secure/path/internal-ca.pem'
@@ -148,10 +140,10 @@ $env:VSPHERE_USER = $Credential.UserName
 $env:VSPHERE_PASSWORD = $Credential.GetNetworkCredential().Password
 
 try {
-    .\scripts\scan-vsphere.ps1 `
-        -SourceVm "tst-win-10-12" `
-        -OutputDirectory "C:\Secure\vsphere-scan" `
-        -CaCert "C:\Secure\internal-ca.pem"
+    python .\vsphere.py scan `
+        --source-vm "tst-win-10-12" `
+        --output-dir "C:\Secure\vsphere-scan" `
+        --ca-cert "C:\Secure\internal-ca.pem"
 }
 finally {
     Remove-Item Env:VSPHERE_PASSWORD -ErrorAction SilentlyContinue

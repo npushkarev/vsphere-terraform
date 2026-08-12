@@ -84,7 +84,8 @@ def discover_layout(source: Optional[Path] = None, windows: Optional[bool] = Non
     is_windows = os.name == "nt" if windows is None else windows
     repo_scripts = base / "scripts"
     if (repo_scripts / ("scan-vsphere.ps1" if is_windows else "scan-vsphere.sh")).is_file():
-        return Layout(base, repo_scripts, base, None, is_windows)
+        platform = "windows_amd64" if is_windows else "linux_amd64"
+        return Layout(base, repo_scripts, base, base / ".vsphere-tools" / platform, is_windows)
     local_scanner = base / ("scan-vsphere.ps1" if is_windows else "scan-vsphere.sh")
     if local_scanner.is_file():
         return Layout(base, base, None, base.parent, is_windows)
@@ -115,6 +116,11 @@ def find_tool(layout: Layout, name: str) -> Path:
         bundled = layout.prefix / "bin" / executable
         if bundled.is_file() and not bundled.is_symlink():
             return bundled.resolve()
+        if layout.repo_root is not None and (layout.repo_root / "vendor" / "MANIFEST.sha256").is_file():
+            raise LauncherError(
+                "Локальные инструменты не установлены. Запустите: "
+                "python{} vsphere.py install".format("" if layout.windows else "3")
+            )
     found = shutil.which(executable)
     if not found and not layout.windows:
         found = shutil.which(name)
@@ -755,6 +761,22 @@ def command_check(layout: Layout, _args: argparse.Namespace) -> None:
     print("Проверка launcher-а пройдена.")
 
 
+def command_install(layout: Layout, args: argparse.Namespace) -> None:
+    repo_root = require_full_layout(layout)
+    if not (repo_root / "vendor" / "MANIFEST.sha256").is_file():
+        raise LauncherError("В репозитории отсутствует vendored offline toolchain.")
+    arguments = ["-VerifyOnly"] if layout.windows and args.verify_only else (
+        ["--verify-only"] if args.verify_only else []
+    )
+    print("Проверка vendored-файлов; сетевые загрузки отключены.")
+    run_process(
+        wrapper_command(layout, "install-repo-offline", arguments),
+        sanitized_environment(layout),
+        repo_root,
+        1800,
+    )
+
+
 def command_scan(layout: Layout, args: argparse.Namespace) -> None:
     identity = collect_identity(args)
     govc = verified_tool(layout, "govc")
@@ -965,6 +987,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    install_parser = subparsers.add_parser(
+        "install", help="установить инструменты только из файлов репозитория"
+    )
+    install_parser.add_argument(
+        "--verify-only", action="store_true", help="проверить vendor без установки"
+    )
+
     subparsers.add_parser("check", help="проверить Python, tools и версии")
 
     scan = subparsers.add_parser("scan", help="выполнить полный read-only scan")
@@ -1005,6 +1034,7 @@ def dispatch(layout: Layout, args: argparse.Namespace) -> None:
     if hasattr(args, "timeout_seconds"):
         positive_timeout(args.timeout_seconds)
     handlers = {
+        "install": command_install,
         "check": command_check,
         "scan": command_scan,
         "report": command_report,
@@ -1027,21 +1057,31 @@ def interactive_menu(layout: Layout) -> int:
     parser = build_parser()
     while True:
         print("\n=== vSphere launcher ===")
-        print("1. Проверить инструменты")
-        print("2. Просканировать vSphere (READ ONLY)")
-        print("3. Показать отчёт")
         if layout.full_workflow:
-            print("4. Создать Terraform plan")
-            print("5. Показать сохранённый plan")
-            print("6. Применить проверенный plan")
+            print("1. Установить инструменты из репозитория (OFFLINE)")
+            print("2. Проверить инструменты")
+            print("3. Просканировать vSphere (READ ONLY)")
+            print("4. Показать отчёт")
+            print("5. Создать Terraform plan")
+            print("6. Показать сохранённый plan")
+            print("7. Применить проверенный plan")
+        else:
+            print("1. Проверить инструменты")
+            print("2. Просканировать vSphere (READ ONLY)")
+            print("3. Показать отчёт")
         print("0. Выход")
         choice = input("Выберите действие: ").strip()
+        normalized = choice
+        if not layout.full_workflow and choice in ("1", "2", "3"):
+            normalized = str(int(choice) + 1)
         try:
-            if choice == "0":
+            if normalized == "0":
                 return 0
-            if choice == "1":
+            if normalized == "1" and layout.full_workflow:
+                dispatch(layout, parser.parse_args(["install"]))
+            elif normalized == "2":
                 dispatch(layout, parser.parse_args(["check"]))
-            elif choice == "2":
+            elif normalized == "3":
                 command = [
                     "scan",
                     "--server", menu_prompt("vCenter", os.environ.get("VSPHERE_SERVER", "")),
@@ -1054,17 +1094,17 @@ def interactive_menu(layout: Layout) -> int:
                 if ca_cert:
                     command += ["--ca-cert", ca_cert]
                 dispatch(layout, parser.parse_args(command))
-            elif choice == "3":
+            elif normalized == "4":
                 directory = menu_prompt("Каталог отчёта")
                 dispatch(layout, parser.parse_args(["report", directory]))
-            elif choice == "4" and layout.full_workflow:
+            elif normalized == "5" and layout.full_workflow:
                 stack = menu_prompt("Stack", "windows-clone")
                 var_file = menu_prompt("Путь к tfvars")
                 command = ["plan", "--stack", stack, "--var-file", var_file]
                 dispatch(layout, parser.parse_args(command))
-            elif choice == "5" and layout.full_workflow:
+            elif normalized == "6" and layout.full_workflow:
                 dispatch(layout, parser.parse_args(["show", menu_prompt("Путь к .tfplan")]))
-            elif choice == "6" and layout.full_workflow:
+            elif normalized == "7" and layout.full_workflow:
                 dispatch(layout, parser.parse_args(["apply", menu_prompt("Путь к .tfplan")]))
             else:
                 print("Неизвестное действие.", file=sys.stderr)

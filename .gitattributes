@@ -1,0 +1,13 @@
+vendor/**/*.zip -text -diff
+vendor/**/*.gz -text -diff
+vendor/**/*.exe -text -diff
+vendor/**/jq-* -text -diff
+vendor/**/*.json text eol=lf
+vendor/**/*.sha256 text eol=lf
+vendor/**/*.txt text eol=lf
+vendor/**/LICENSE text eol=lf
+vendor/**/COPYING text eol=lf
+vendor/**/NOTICE text eol=lf
+# The manifest hashes checkout bytes. Disable every line-ending transform in
+# vendor/, including extensionless SHA256SUMS and Markdown licence notices.
+vendor/** -text -diff

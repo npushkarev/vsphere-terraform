@@ -25,7 +25,7 @@ class LauncherTestCase(unittest.TestCase):
         scripts = root / "scripts"
         scripts.mkdir(parents=True)
         extension = ".ps1" if windows else ".sh"
-        for name in ("scan-vsphere", "plan", "apply-reviewed-plan"):
+        for name in ("scan-vsphere", "plan", "apply-reviewed-plan", "install-repo-offline"):
             (scripts / (name + extension)).write_text("# test\n", encoding="utf-8")
         for stack in launcher.STACKS:
             stack_dir = root / "stacks" / stack
@@ -75,6 +75,44 @@ class LauncherTestCase(unittest.TestCase):
         return root
 
 
+class VendorMetadataTests(unittest.TestCase):
+    def test_vendored_artifacts_match_provenance_and_repository_limits(self):
+        vendor = PROJECT_ROOT / "vendor"
+        payload = json.loads((vendor / "provenance.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(set(payload["supported_platforms"]), {"linux_amd64", "windows_amd64"})
+        artifacts = payload["artifacts"]
+        self.assertEqual(len(artifacts), 8)
+        seen = set()
+        for artifact in artifacts:
+            relative = artifact["path"]
+            self.assertNotIn(relative, seen)
+            seen.add(relative)
+            path = PROJECT_ROOT / relative
+            self.assertTrue(path.is_file())
+            self.assertFalse(path.is_symlink())
+            self.assertEqual(path.stat().st_size, artifact["size"])
+            self.assertLess(path.stat().st_size, 95 * 1024 * 1024)
+            self.assertEqual(launcher.sha256_file(path), artifact["sha256"])
+
+    def test_vendor_manifest_is_an_exact_file_allowlist(self):
+        vendor = PROJECT_ROOT / "vendor"
+        expected = set()
+        for line in (vendor / "MANIFEST.sha256").read_text(encoding="ascii").splitlines():
+            digest, relative = line.split("  ", 1)
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            self.assertTrue(relative.startswith("vendor/"))
+            path = PROJECT_ROOT / relative
+            self.assertEqual(launcher.sha256_file(path), digest)
+            expected.add(relative)
+        actual = {
+            path.relative_to(PROJECT_ROOT).as_posix()
+            for path in vendor.rglob("*")
+            if path.is_file() and path.name != "MANIFEST.sha256"
+        }
+        self.assertEqual(actual, expected)
+
+
 class LayoutAndCommandTests(LauncherTestCase):
     def test_discovers_repo_independently_of_cwd(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -85,6 +123,48 @@ class LayoutAndCommandTests(LauncherTestCase):
             found = launcher.discover_layout(fake_source, windows=False)
             self.assertEqual(found.repo_root, layout.repo_root.resolve())
             self.assertEqual(found.scripts_dir, layout.scripts_dir.resolve())
+            self.assertEqual(found.prefix, root.resolve() / ".vsphere-tools" / "linux_amd64")
+
+    def test_repo_install_uses_only_offline_wrapper(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            basic = self.make_repo(root)
+            vendor = root / "vendor"
+            vendor.mkdir()
+            (vendor / "MANIFEST.sha256").write_text("test\n", encoding="ascii")
+            prefix = root / ".vsphere-tools" / "linux_amd64"
+            layout = launcher.Layout(root, basic.scripts_dir, root, prefix, False)
+            args = argparse.Namespace(verify_only=True)
+            captured = {}
+
+            def fake_run(command, env, cwd, timeout):
+                captured["command"] = command
+                captured["cwd"] = cwd
+
+            with mock.patch.object(launcher, "run_process", side_effect=fake_run):
+                launcher.command_install(layout, args)
+            self.assertEqual(captured["command"][0], "/bin/sh")
+            self.assertTrue(captured["command"][1].endswith("install-repo-offline.sh"))
+            self.assertEqual(captured["command"][-1], "--verify-only")
+            self.assertEqual(captured["cwd"], root)
+
+    def test_vendored_repo_never_falls_back_to_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            basic = self.make_repo(root)
+            vendor = root / "vendor"
+            vendor.mkdir()
+            (vendor / "MANIFEST.sha256").write_text("test\n", encoding="ascii")
+            layout = launcher.Layout(
+                root,
+                basic.scripts_dir,
+                root,
+                root / ".vsphere-tools" / "linux_amd64",
+                False,
+            )
+            with mock.patch.object(launcher.shutil, "which", return_value="/malicious/terraform"):
+                with self.assertRaisesRegex(launcher.LauncherError, "vsphere.py install"):
+                    launcher.find_tool(layout, "terraform")
 
     def test_linux_wrapper_is_argv_without_shell_text(self):
         with tempfile.TemporaryDirectory() as temporary:

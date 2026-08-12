@@ -1,0 +1,7 @@
+/vendor/ @npushkarev
+/.terraform-version @npushkarev
+/.govc-version @npushkarev
+/.jq-version @npushkarev
+/scripts/install-* @npushkarev
+/scripts/verify-vendor.* @npushkarev
+/scripts/build-offline-bundle.* @npushkarev

@@ -21,9 +21,34 @@ Windows:
 python .\vsphere.py
 ```
 
-Меню позволяет проверить инструменты, запустить read-only scan, показать
+Меню позволяет локально установить и проверить инструменты, запустить read-only scan, показать
 проверенный отчёт, создать/просмотреть plan и применить только ранее созданный
 launcher-ом plan.
+
+## Offline-установка из репозитория
+
+Полная рабочая копия уже содержит Terraform 1.15.8, govc 0.55.1, jq 1.8.2 и
+provider mirror `vmware/vsphere` 2.15.1 для Linux/Windows x64:
+
+```sh
+python3 vsphere.py install
+```
+
+```powershell
+python .\vsphere.py install
+```
+
+Команда не скачивает файлы и не использует системный Terraform из `PATH`.
+Перед распаковкой она проверяет строгий `vendor/MANIFEST.sha256`, размеры,
+отсутствие дополнительных файлов и symbolic links. Repo-local toolchain
+устанавливается в `.vsphere-tools/<platform>` и автоматически используется
+всеми следующими командами launcher-а.
+
+Только проверить vendor, ничего не записывая:
+
+```sh
+python3 vsphere.py install --verify-only
+```
 
 ## Проверка установки
 
@@ -35,7 +60,9 @@ python3 vsphere.py check
 python .\vsphere.py check
 ```
 
-Команда сверяет установленные Terraform, govc и jq с закреплёнными версиями.
+Команда сверяет repo-local Terraform, govc и jq с закреплёнными версиями. Если
+toolchain отсутствует, launcher не делает fallback на `PATH`, а просит явно
+выполнить `install`.
 
 ## Read-only скан
 
@@ -134,7 +161,7 @@ Python нет.
 
 ## Offline-режим
 
-`vsphere.py` входит в offline bundle. После установки standalone launcher
+`vsphere.py` входит и в offline bundle. После установки standalone launcher
 находится здесь:
 
 ```text

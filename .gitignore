@@ -16,6 +16,7 @@ override.tf.json
 *_override.tf.json
 .plans/
 offline-dist/
+.vsphere-tools/
 /scan-results/
 __pycache__/
 *.py[cod]

@@ -14,6 +14,19 @@ $Python = $PythonApplications[0].Path
 if ($LASTEXITCODE -ne 0) { throw "Python 3.9 or newer is required." }
 & $Python -B -m unittest discover -s (Join-Path $ProjectDir "tests") -p "test_*.py" -v
 if ($LASTEXITCODE -ne 0) { throw "Python launcher tests failed." }
+& (Join-Path $ProjectDir "scripts\verify-vendor.ps1") -ProjectDir $ProjectDir
+$OfflineBuilderText = Get-Content -LiteralPath `
+    (Join-Path $ProjectDir "scripts\build-offline-bundle.ps1") -Raw
+if ($OfflineBuilderText -match 'Invoke-WebRequest|WebClient|HttpClient|Start-BitsTransfer|providers\s+mirror') {
+    throw "Offline bundle builder must not contain network/download commands."
+}
+$RepoInstallerText = @(
+    Get-Content -LiteralPath (Join-Path $ProjectDir "scripts\install-repo-offline.ps1") -Raw
+    Get-Content -LiteralPath (Join-Path $ProjectDir "scripts\verify-vendor.ps1") -Raw
+) -join "`n"
+if ($RepoInstallerText -match 'Invoke-WebRequest|WebClient|HttpClient|Start-BitsTransfer|https?://') {
+    throw "Repo-local installer and verifier must not contain network calls."
+}
 
 foreach ($Name in @("VSPHERE_USER", "VSPHERE_PASSWORD", "VSPHERE_SERVER")) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) {

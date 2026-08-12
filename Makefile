@@ -1,6 +1,8 @@
-TF ?= terraform
-GOVC ?= govc
-JQ ?= jq
+TOOLS_DIR ?= $(CURDIR)/.vsphere-tools/linux_amd64
+TF ?= $(TOOLS_DIR)/bin/terraform
+GOVC ?= $(TOOLS_DIR)/bin/govc
+JQ ?= $(TOOLS_DIR)/bin/jq
+export TF_CLI_CONFIG_FILE ?= $(TOOLS_DIR)/terraform.rc
 STACK ?= inventory
 VAR_FILE ?=
 PLAN ?=
@@ -8,10 +10,11 @@ SOURCE_VM ?= tst-win-10-12
 OUTPUT_DIR ?=
 CA_CERT ?=
 
-.PHONY: help install launcher scan fmt init validate plan apply offline-bundle
+.PHONY: help install install-online check launcher scan fmt init validate plan apply offline-bundle verify-vendor
 
 help:
 	@echo "make install"
+	@echo "make check"
 	@echo "make launcher"
 	@echo "make scan SOURCE_VM=tst-win-10-12 OUTPUT_DIR=/private/path/vsphere-scan"
 	@echo "make fmt"
@@ -25,9 +28,18 @@ help:
 	@echo "make offline-bundle PLATFORM=linux_amd64"
 
 install:
+	python3 ./vsphere.py install
+
+install-online:
 	./scripts/install-terraform.sh
 	./scripts/install-govc.sh
 	./scripts/install-jq.sh
+
+check:
+	python3 ./vsphere.py check
+
+verify-vendor:
+	./scripts/verify-vendor.sh
 
 launcher:
 	python3 ./vsphere.py
@@ -54,4 +66,4 @@ apply:
 	TF_BIN="$(TF)" ./scripts/apply-reviewed-plan.sh "$(PLAN)"
 
 offline-bundle:
-	TF_BIN="$(TF)" ./scripts/build-offline-bundle.sh "$(PLATFORM)"
+	./scripts/build-offline-bundle.sh "$(PLATFORM)"

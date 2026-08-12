@@ -15,6 +15,8 @@ export VSPHERE_USER VSPHERE_PASSWORD VSPHERE_SERVER
 for script_file in "$project_dir"/scripts/*.sh; do
   sh -n "$script_file"
 done
+python3 -B -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)'
+python3 -B -m unittest discover -s "$project_dir/tests" -p 'test_*.py' -v
 expected_govc=$(tr -d '[:space:]' < "$project_dir/.govc-version")
 expected_jq=$(tr -d '[:space:]' < "$project_dir/.jq-version")
 [ "$("$govc_bin" version)" = "govc $expected_govc" ] || {

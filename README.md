@@ -31,6 +31,7 @@ Provider зафиксирован строго на `2.15.1`: это после�
 - `modules/linux-vm-clone` — модуль клонирования с `prevent_destroy = true`.
 - `scripts` — установка, проверка, plan/apply и offline bundle.
 - `scripts/scan-vsphere.*` — полный read-only discovery для Debian/Windows.
+- `vsphere.py` — единое интерактивное меню для Debian/Windows.
 
 ## 1. Установка инструментов
 
@@ -45,7 +46,7 @@ Debian Linux x64:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl unzip gnupg make
+sudo apt-get install -y ca-certificates curl unzip gnupg make python3
 make install
 export PATH="$HOME/.local/bin:$PATH"
 terraform version
@@ -69,6 +70,26 @@ jq --version
 Установщики не вызывают `sudo` и проверяют закреплённые SHA-256 официальных
 архивов. Linux Terraform дополнительно проверяется по подписанному HashiCorp
 checksum.
+
+### Единая Python-запускалка
+
+Если нужен один интерфейс вместо отдельных shell/PowerShell-команд, установите
+Python 3.9+ и запустите интерактивное меню:
+
+```sh
+python3 vsphere.py
+```
+
+Windows:
+
+```powershell
+python .\vsphere.py
+```
+
+Запускалка умеет проверить инструменты, выполнить read-only scan, открыть
+проверенный отчёт, создать plan и применить только ранее проверенный plan через
+защитные wrapper-скрипты. Пароль запрашивается скрыто и не передаётся в
+аргументах командной строки. Подробности: [docs/python-launcher.md](docs/python-launcher.md).
 
 ## 2. Учётная запись vCenter
 

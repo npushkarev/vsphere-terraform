@@ -30,7 +30,7 @@ Registry. Результат в `offline-dist/` содержит:
 - filesystem mirror `vmware/vsphere = 2.15.1` без `direct {}` fallback;
 - VMware `govc 0.55.1`;
 - `jq 1.8.2`;
-- standalone read-only scanner, filters, JSON schema и инструкцию;
+- standalone read-only scanner, Python-запускалку, filters, JSON schema и инструкции;
 - lock-файлы всех трёх Terraform stacks;
 - `bundle-info.json` и внутренний `MANIFEST.sha256`.
 
@@ -53,9 +53,12 @@ Linux Terraform проверяется по подписанному HashiCorp `
 for tool in sha256sum gpg unzip tar install awk; do
   command -v "$tool" >/dev/null || echo "missing: $tool"
 done
+python3 -c 'import sys; assert sys.version_info >= (3, 9)'
 ```
 
 Windows использует встроенные PowerShell 5.1, `Expand-Archive` и `Get-FileHash`.
+Для единой Python-запускалки заранее установите Python 3.9+ из доверенного
+внутреннего образа или package mirror; `pip` и сторонние Python-пакеты не нужны.
 
 Передайте archive, рабочую копию репозитория и публичный PEM внутреннего CA
 утверждённым каналом. Репозиторий нужен для Terraform stacks; для одного скана
@@ -124,9 +127,32 @@ Windows standalone scanner:
   -CaCert "C:\Secure\internal-ca.pem"
 ```
 
-Переменные `VSPHERE_SERVER`, `VSPHERE_USER`, `VSPHERE_PASSWORD` задаются только
-в текущем процессе и очищаются после запуска. Полная инструкция и описание
-результатов: [discovery.md](discovery.md).
+Тот же standalone scanner можно запускать единообразно через Python:
+
+```sh
+python3 "$HOME/.local/share/vsphere-terraform/scanner/vsphere.py" scan \
+  --server incvc.inc.elara.local \
+  --user '<read-only-user>' \
+  --source-vm tst-win-10-12 \
+  --output-dir /secure/path/vsphere-scan \
+  --ca-cert /secure/path/internal-ca.pem
+```
+
+```powershell
+python "$env:LOCALAPPDATA\vsphere-terraform\scanner\vsphere.py" scan `
+  --server incvc.inc.elara.local `
+  --user '<read-only-user>' `
+  --source-vm tst-win-10-12 `
+  --output-dir C:\Secure\vsphere-scan `
+  --ca-cert C:\Secure\internal-ca.pem
+```
+
+Launcher передаёт `VSPHERE_SERVER`, `VSPHERE_USER`, `VSPHERE_PASSWORD` только
+дочернему процессу. Он не может удалить переменные, которые вы сами заранее
+экспортировали в родительской shell. После работы в Debian выполните `unset VSPHERE_PASSWORD`,
+а в PowerShell — `Remove-Item Env:VSPHERE_PASSWORD`.
+Полная инструкция и описание результатов: [discovery.md](discovery.md).
+Возможности Python-интерфейса: [python-launcher.md](python-launcher.md).
 
 ## Offline Terraform validation
 

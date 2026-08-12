@@ -8,10 +8,11 @@ SOURCE_VM ?= tst-win-10-12
 OUTPUT_DIR ?=
 CA_CERT ?=
 
-.PHONY: help install scan fmt init validate plan apply offline-bundle
+.PHONY: help install launcher scan fmt init validate plan apply offline-bundle
 
 help:
 	@echo "make install"
+	@echo "make launcher"
 	@echo "make scan SOURCE_VM=tst-win-10-12 OUTPUT_DIR=/private/path/vsphere-scan"
 	@echo "make fmt"
 	@echo "make init STACK=inventory"
@@ -27,6 +28,9 @@ install:
 	./scripts/install-terraform.sh
 	./scripts/install-govc.sh
 	./scripts/install-jq.sh
+
+launcher:
+	python3 ./vsphere.py
 
 scan:
 	@set -- --source-vm "$(SOURCE_VM)"; \

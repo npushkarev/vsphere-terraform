@@ -9,6 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  launcher:
+    name: Python ${{ matrix.python }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test Python launcher
+        run: python -B -m unittest discover -s tests -p "test_*.py" -v
+
   linux:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -39,6 +56,9 @@ jobs:
             --fixture-dir "$GITHUB_WORKSPACE/tests/discovery/fixtures" \
             --output-dir "$RUNNER_TEMP/offline-scan" \
             --generated-at 2026-08-11T00:00:00Z
+          PATH="$install_dir/bin:$PATH" \
+            python3 "$install_dir/scanner/vsphere.py" \
+            report "$RUNNER_TEMP/offline-scan"
           mkdir -p "$RUNNER_TEMP/offline-stack"
           cp stacks/inventory/*.tf stacks/inventory/.terraform.lock.hcl "$RUNNER_TEMP/offline-stack/"
           TF_CLI_CONFIG_FILE="$install_dir/terraform.rc" \
@@ -218,15 +238,22 @@ jobs:
             $env:VSPHERE_SERVER = "127.0.0.1:8998"
             $env:VSPHERE_USER = "simulator-user"
             $env:VSPHERE_PASSWORD = "simulator-password"
-            .\scripts\scan-vsphere.ps1 `
-              -SourceVm "DC0_H0_VM0" `
-              -OutputDirectory "$env:RUNNER_TEMP\vcsim-scan" `
-              -CaCert $CaPath `
-              -CommandTimeoutSeconds 60
+            python .\vsphere.py scan `
+              --server "127.0.0.1:8998" `
+              --user "simulator-user" `
+              --source-vm "DC0_H0_VM0" `
+              --output-dir "$env:RUNNER_TEMP\vcsim-scan" `
+              --ca-cert $CaPath `
+              --timeout-seconds 180
+            if ($LASTEXITCODE -ne 0) { throw "Python launcher vcsim scan failed." }
             & jq.exe -e `
               '.read_only == true and .counts.virtual_machines >= 1 and ((.inventory.networks | map(.ref) | length) == (.inventory.networks | map(.ref) | unique | length))' `
               "$env:RUNNER_TEMP\vcsim-scan\inventory.json"
             if ($LASTEXITCODE -ne 0) { throw "vcsim scan assertions failed." }
+            $PythonScanAcl = Get-Acl -LiteralPath "$env:RUNNER_TEMP\vcsim-scan"
+            if (-not $PythonScanAcl.AreAccessRulesProtected) {
+              throw "Python launcher scan result inherited unexpected ACL rules."
+            }
           }
           finally {
             foreach ($Name in @(
@@ -260,6 +287,9 @@ jobs:
             -OutputDirectory "$env:RUNNER_TEMP\offline-scan" `
             -GeneratedAt "2026-08-11T00:00:00Z" `
             -Jq (Join-Path $InstallDir "bin\jq.exe")
+          python (Join-Path $InstallDir "scanner\vsphere.py") `
+            report "$env:RUNNER_TEMP\offline-scan"
+          if ($LASTEXITCODE -ne 0) { throw "Offline Python launcher report failed." }
           $OfflineStack = "$env:RUNNER_TEMP\offline-stack"
           New-Item -ItemType Directory -Path $OfflineStack | Out-Null
           Copy-Item -Path .\stacks\inventory\*.tf -Destination $OfflineStack

@@ -76,6 +76,8 @@ foreach ($Installer in @(
 }
 Copy-Item -LiteralPath (Join-Path $ProjectDir "scripts\scan-vsphere.ps1") `
     -Destination (Join-Path $Stage "scanner")
+Copy-Item -LiteralPath (Join-Path $ProjectDir "vsphere.py") `
+    -Destination (Join-Path $Stage "scanner")
 foreach ($FilterName in @(
         "discovery-normalize.jq",
         "discovery-devices.jq",
@@ -91,10 +93,16 @@ Copy-Item -LiteralPath (Join-Path $ProjectDir ".govc-version") `
     -Destination (Join-Path $Stage "scanner")
 Copy-Item -LiteralPath (Join-Path $ProjectDir ".jq-version") `
     -Destination (Join-Path $Stage "scanner")
+Copy-Item -LiteralPath (Join-Path $ProjectDir ".terraform-version") `
+    -Destination (Join-Path $Stage "scanner")
 Copy-Item -LiteralPath (Join-Path $ProjectDir "schemas\vsphere-inventory-v1.schema.json") `
     -Destination (Join-Path $Stage "scanner\schemas")
 Copy-Item -LiteralPath (Join-Path $ProjectDir "docs\discovery.md") `
     -Destination (Join-Path $Stage "scanner\DISCOVERY.md")
+Copy-Item -LiteralPath (Join-Path $ProjectDir "docs\python-launcher.md") `
+    -Destination (Join-Path $Stage "scanner\PYTHON-LAUNCHER.md")
+Copy-Item -LiteralPath (Join-Path $ProjectDir "docs\state.md") `
+    -Destination (Join-Path $Stage "scanner\state.md")
 
 Copy-Item -LiteralPath (Join-Path $ProjectDir "stacks\inventory\.terraform.lock.hcl") `
     -Destination (Join-Path $Stage "lockfiles\inventory.lock.hcl")

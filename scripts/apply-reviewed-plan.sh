@@ -6,6 +6,7 @@ umask 077
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 tf_bin=${TF_BIN:-terraform}
+jq_bin=${JQ_BIN:-jq}
 plan_input=${1:-}
 
 [ -n "$plan_input" ] || { echo "usage: $0 /absolute/path/to/plan.tfplan" >&2; exit 2; }
@@ -39,7 +40,7 @@ case "$(basename -- "$plan_file")" in
   *) echo "expected a .tfplan file" >&2; exit 1 ;;
 esac
 
-command -v jq >/dev/null 2>&1 || { echo "required command is missing: jq" >&2; exit 1; }
+command -v "$jq_bin" >/dev/null 2>&1 || { echo "required command is missing: jq" >&2; exit 1; }
 plan_json=$(mktemp "$plan_dir/.apply-plan-json.XXXXXX")
 cleanup() {
   rm -f -- "$plan_json"
@@ -57,13 +58,13 @@ sha256_file() {
 hash_before=$(sha256_file "$plan_file")
 "$tf_bin" -chdir="$project_dir/stacks/$stack" show -json "$plan_file" > "$plan_json"
 if [ "$stack" = vm-clones ]; then
-  if jq -e 'any(.resource_changes[]?;
+  if "$jq_bin" -e 'any(.resource_changes[]?;
     (.change.actions | index("delete")) != null)' "$plan_json" >/dev/null; then
     echo "saved plan contains delete/replace; refusing" >&2
     exit 1
   fi
 else
-  if ! jq -e -f "$script_dir/windows-clone-plan-policy.jq" \
+  if ! "$jq_bin" -e -f "$script_dir/windows-clone-plan-policy.jq" \
     "$plan_json" >/dev/null; then
     echo "Windows clone plan must be no-op or exactly one create; refusing" >&2
     exit 1

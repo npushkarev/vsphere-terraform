@@ -103,3 +103,4 @@ Write-Host "Offline installation complete. Open a new PowerShell window, or run:
 Write-Host "`$env:Path = `"$BinDir;`$env:Path`""
 Write-Host "`$env:TF_CLI_CONFIG_FILE = `"$CliConfig`""
 Write-Host "Scanner: $(Join-Path $ScannerDir 'scan-vsphere.ps1')"
+Write-Host "Python launcher: python $(Join-Path $ScannerDir 'vsphere.py')"

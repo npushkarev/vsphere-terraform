@@ -17,4 +17,6 @@ override.tf.json
 .plans/
 offline-dist/
 /scan-results/
+__pycache__/
+*.py[cod]
 .DS_Store

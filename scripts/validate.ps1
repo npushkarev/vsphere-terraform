@@ -8,6 +8,13 @@ $Utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
 $ExpectedGovcVersion = (Get-Content -LiteralPath (Join-Path $ProjectDir ".govc-version") -Raw).Trim()
 $ExpectedJqVersion = (Get-Content -LiteralPath (Join-Path $ProjectDir ".jq-version") -Raw).Trim()
 
+$PythonApplications = @(Get-Command "python.exe" -CommandType Application -ErrorAction Stop)
+$Python = $PythonApplications[0].Path
+& $Python -B -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)"
+if ($LASTEXITCODE -ne 0) { throw "Python 3.9 or newer is required." }
+& $Python -B -m unittest discover -s (Join-Path $ProjectDir "tests") -p "test_*.py" -v
+if ($LASTEXITCODE -ne 0) { throw "Python launcher tests failed." }
+
 foreach ($Name in @("VSPHERE_USER", "VSPHERE_PASSWORD", "VSPHERE_SERVER")) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) {
         [Environment]::SetEnvironmentVariable($Name, "validation-only", "Process")

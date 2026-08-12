@@ -44,6 +44,7 @@ mkdir -p "$prefix/provider-mirror" "$prefix/scanner"
 cp -R "$bundle_dir/provider-mirror/." "$prefix/provider-mirror/"
 cp -R "$bundle_dir/scanner/." "$prefix/scanner/"
 chmod 700 "$prefix/scanner/scan-vsphere.sh"
+chmod 600 "$prefix/scanner/vsphere.py"
 
 cli_config="$prefix/terraform.rc"
 {
@@ -61,3 +62,4 @@ echo "offline installation complete"
 echo "export PATH=\"$prefix/bin:\$PATH\""
 echo "export TF_CLI_CONFIG_FILE=\"$cli_config\""
 echo "scanner: $prefix/scanner/scan-vsphere.sh"
+echo "Python launcher: python3 $prefix/scanner/vsphere.py"

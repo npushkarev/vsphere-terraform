@@ -488,6 +488,21 @@ class ApplyBoundaryTests(LauncherTestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_stdio_is_utf8_when_parent_pipe_is_cp1252(self):
+        stdout_bytes = io.BytesIO()
+        stderr_bytes = io.BytesIO()
+        stdout = io.TextIOWrapper(stdout_bytes, encoding="cp1252")
+        stderr = io.TextIOWrapper(stderr_bytes, encoding="cp1252")
+        with mock.patch.object(launcher.sys, "stdout", stdout), \
+                mock.patch.object(launcher.sys, "stderr", stderr):
+            launcher.configure_stdio()
+            launcher.sys.stdout.write("Учётная запись")
+            launcher.sys.stderr.write("Ошибка")
+            launcher.sys.stdout.flush()
+            launcher.sys.stderr.flush()
+        self.assertEqual(stdout_bytes.getvalue().decode("utf-8"), "Учётная запись")
+        self.assertEqual(stderr_bytes.getvalue().decode("utf-8"), "Ошибка")
+
     def test_no_password_cli_option_exists(self):
         parser = launcher.build_parser()
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

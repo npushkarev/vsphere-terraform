@@ -69,6 +69,16 @@ class Identity:
     password: str
 
 
+def configure_stdio() -> None:
+    # Windows PowerShell 5.1 may expose cp1252 pipes even when the launcher
+    # prints Russian text. UTF-8 keeps console and CI output deterministic.
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def discover_layout(source: Optional[Path] = None, windows: Optional[bool] = None) -> Layout:
     base = (source or Path(__file__)).resolve().parent
     is_windows = os.name == "nt" if windows is None else windows
@@ -1064,6 +1074,7 @@ def interactive_menu(layout: Layout) -> int:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
+        configure_stdio()
         require_python()
         layout = discover_layout()
         arguments = list(sys.argv[1:] if argv is None else argv)

@@ -703,6 +703,30 @@ class TrustTests(LauncherTestCase):
                 launcher.command_scan(layout, self.scan_args(root / "result"))
             self.assertEqual(captured["ca"], str(trust_file.resolve()))
 
+    def test_fingerprint_confirmation_takes_an_ascii_answer(self):
+        digest = "ab" * 32
+        for answer in ("y", "Y", "yes", "да"):
+            with mock.patch.object(launcher.sys, "stdin", FakeTTY()), \
+                    mock.patch("builtins.input", return_value=answer), \
+                    mock.patch("sys.stdout", io.StringIO()):
+                launcher.confirm_fingerprint(None, digest)
+
+    def test_fingerprint_confirmation_survives_undecodable_answer(self):
+        # PuTTY отдаёт кириллицу в cp1251; после errors="replace" ответ приходит
+        # как U+FFFD и должен приводить к отказу, а не к UnicodeDecodeError.
+        digest = "ab" * 32
+        with mock.patch.object(launcher.sys, "stdin", FakeTTY()), \
+                mock.patch("builtins.input", return_value="\ufffd\ufffd"), \
+                mock.patch("sys.stdout", io.StringIO()):
+            with self.assertRaisesRegex(launcher.LauncherError, "не подтверждён"):
+                launcher.confirm_fingerprint(None, digest)
+
+    def test_certificate_hint_uses_the_platform_interpreter(self):
+        posix = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, False)
+        windows = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, True)
+        self.assertIn("python3 vsphere.py trust", launcher.certificate_hint(posix, "vc.example"))
+        self.assertIn("python vsphere.py trust", launcher.certificate_hint(windows, "vc.example"))
+
     def test_terraform_environment_exports_ca_file(self):
         layout = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, False)
         bundle = Path("/trusted/vc.pem")

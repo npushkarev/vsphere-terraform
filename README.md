@@ -145,9 +145,10 @@ python .\vsphere.py trust --server "incvc.inc.elara.local"
 
 Launcher напечатает SHA-256 сертификата vCenter и подождёт подтверждения.
 Сверьте отпечаток в vSphere Client (`Administration > Certificates > Machine SSL
-Certificate`) или в браузере. Только после подтверждения он скачивает CA с
-самого vCenter, проверяет им реальное TLS-соединение и сохраняет файл в
-`.vsphere-trust/<server>.pem`.
+Certificate`) или в браузере, затем ответьте `y`. Ответ вводится латиницей:
+SSH-клиенты часто присылают кириллицу в другой кодировке. Только после
+подтверждения launcher скачивает CA с самого vCenter, проверяет им реальное
+TLS-соединение и сохраняет файл в `.vsphere-trust/<server>.pem`.
 
 Дальше `scan`, `plan` и `apply` берут этот CA автоматически. Флаг `--ca-cert`
 по-прежнему работает, если CA получен другим путём.

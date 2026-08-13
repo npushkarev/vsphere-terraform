@@ -160,6 +160,11 @@ def configure_stdio() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
             reconfigure(encoding="utf-8", errors="backslashreplace")
+    # SSH-клиенты присылают кириллицу в своей кодировке. Ответ пользователя не
+    # должен ронять команду на UnicodeDecodeError.
+    reconfigure = getattr(sys.stdin, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="replace")
 
 
 def discover_layout(source: Optional[Path] = None, windows: Optional[bool] = None) -> Layout:
@@ -767,10 +772,14 @@ def write_trust_bundle(target: Path, certificates: Sequence[bytes], own_director
     return staged
 
 
-def certificate_hint(server: str) -> str:
+def python_command(layout: Layout) -> str:
+    return "python" if layout.windows else "python3"
+
+
+def certificate_hint(layout: Layout, server: str) -> str:
     return (
         "Если в выводе есть 'certificate signed by unknown authority', сначала выполните:\n"
-        "  python vsphere.py trust --server {}".format(server)
+        "  {} vsphere.py trust --server {}".format(python_command(layout), server)
     )
 
 
@@ -988,7 +997,7 @@ def write_plan_receipt(repo_root: Path, plan: Path, stack: str, identity: Identi
 def read_plan_receipt(plan: Path) -> dict:
     path = receipt_path(plan)
     if path.is_symlink() or not path.is_file():
-        raise LauncherError("Нет квитанции launcher-а; создайте plan командой python vsphere.py plan.")
+        raise LauncherError("Нет квитанции launcher-а; создайте plan командой vsphere.py plan.")
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -1077,7 +1086,7 @@ def confirm_fingerprint(expected: Optional[str], fingerprint: str) -> None:
     print("Сверьте отпечаток по независимому каналу:")
     print("  vSphere Client: Administration > Certificates > Machine SSL Certificate.")
     print("  Браузер: замок в адресной строке > сведения о сертификате > SHA-256.")
-    if input("Отпечаток совпадает? (да/нет): ").strip().lower() not in ("да", "д", "yes", "y"):
+    if input("Отпечаток совпадает? y = да, n = нет: ").strip().lower() not in ("y", "yes", "да", "д"):
         raise LauncherError("Отпечаток не подтверждён. Ничего не сохранено.")
 
 
@@ -1394,7 +1403,7 @@ def command_scan(layout: Layout, args: argparse.Namespace) -> None:
                 )
             except LauncherError:
                 if ca_cert is None:
-                    print(certificate_hint(identity.server), file=sys.stderr)
+                    print(certificate_hint(layout, identity.server), file=sys.stderr)
                 raise
         render_reports(
             jq, scripts_dir, raw_source, stage_dir, env, cwd, args.timeout_seconds,
@@ -1456,7 +1465,7 @@ def command_plan(layout: Layout, args: argparse.Namespace) -> None:
         )
     except LauncherError:
         if ca_cert is None:
-            print(certificate_hint(identity.server), file=sys.stderr)
+            print(certificate_hint(layout, identity.server), file=sys.stderr)
         raise
     finally:
         env.pop("VSPHERE_PASSWORD", None)
@@ -1476,7 +1485,7 @@ def command_plan(layout: Layout, args: argparse.Namespace) -> None:
         raise
     print("Plan: {}".format(plan))
     print("Квитанция проверки: {}".format(receipt))
-    print("Следующий шаг: python vsphere.py show \"{}\"".format(plan))
+    print("Следующий шаг: {} vsphere.py show \"{}\"".format(python_command(layout), plan))
 
 
 def show_plan(layout: Layout, plan: Path, stack: str, timeout_seconds: int) -> None:

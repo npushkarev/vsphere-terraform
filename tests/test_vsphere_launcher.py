@@ -673,10 +673,11 @@ class TrustTests(LauncherTestCase):
 
     def test_terraform_environment_exports_ca_file(self):
         layout = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, False)
+        bundle = Path("/trusted/vc.pem")
         env = launcher.terraform_environment(
-            layout, Path("/trusted/terraform"), ca_cert=Path("/trusted/vc.pem")
+            layout, Path("/trusted/terraform"), ca_cert=bundle
         )
-        self.assertEqual(env["SSL_CERT_FILE"], "/trusted/vc.pem")
+        self.assertEqual(env["SSL_CERT_FILE"], str(bundle))
         self.assertNotIn("SSL_CERT_DIR", env)
 
     def test_windows_explicit_ca_asks_for_store_import(self):

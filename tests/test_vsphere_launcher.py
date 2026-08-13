@@ -8,6 +8,7 @@ import shlex
 import sys
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
@@ -602,6 +603,101 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(launcher.LauncherError):
             launcher.normalize_server("https://user:password@vc.example/sdk")
         self.assertEqual(launcher.normalize_server("https://vc.example/sdk"), "vc.example")
+
+
+class TrustTests(LauncherTestCase):
+    def certificate_pem(self, payload: bytes) -> str:
+        return launcher.render_pem(b"\x30" + payload)
+
+    def test_thumbprint_must_be_sha256(self):
+        digest = "ab" * 32
+        self.assertEqual(launcher.normalize_thumbprint("AB:" * 31 + "AB"), digest)
+        with self.assertRaises(launcher.LauncherError):
+            launcher.normalize_thumbprint("ab" * 20)
+        with self.assertRaises(launcher.LauncherError):
+            launcher.normalize_thumbprint("zz" * 32)
+
+    def test_archive_keeps_certificates_and_drops_other_members(self):
+        certificate = b"\x30" + b"c" * 200
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("certs/lin/aaaa.0", launcher.render_pem(certificate))
+            archive.writestr("certs/lin/aaaa.r1", "-----BEGIN X509 CRL-----\nZm9v\n-----END X509 CRL-----\n")
+            archive.writestr("certs/win/aaaa.crt", launcher.render_pem(certificate))
+            archive.writestr("readme.txt", "not a certificate\n")
+        found = launcher.unique_certificates(launcher.certificates_from_archive(buffer.getvalue()))
+        self.assertEqual(found, [certificate])
+
+    def test_archive_rejects_non_zip_payload(self):
+        with self.assertRaises(launcher.LauncherError):
+            launcher.certificates_from_archive(b"<html>login</html>")
+
+    def test_pem_parser_skips_short_and_broken_blocks(self):
+        text = (
+            launcher.render_pem(b"\x30" + b"a" * 200)
+            + "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----\n"
+            + "-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n"
+        )
+        self.assertEqual(launcher.pem_certificates(text), [b"\x30" + b"a" * 200])
+
+    def test_scan_uses_saved_trust_bundle_when_no_flag(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = self.make_repo(root)
+            trust_file = launcher.default_trust_file(layout, "vc.example")
+            trust_file.parent.mkdir(parents=True)
+            trust_file.write_text(launcher.render_pem(b"\x30" + b"a" * 200), encoding="ascii")
+            args = argparse.Namespace(
+                server="vc.example",
+                user="reader",
+                source_vm="tst-win-10-12",
+                output_dir=str(root / "result"),
+                ca_cert=None,
+                timeout_seconds=60,
+            )
+            identity = launcher.Identity("vc.example", "reader", "SECRET")
+            captured = {}
+
+            with mock.patch.object(launcher, "collect_identity", return_value=identity), \
+                    mock.patch.object(launcher, "verified_tool", return_value=Path("/trusted/tool")), \
+                    mock.patch.object(
+                        launcher,
+                        "run_process",
+                        side_effect=lambda command, env, cwd, timeout: captured.update(command=list(command)),
+                    ), \
+                    mock.patch.object(launcher, "print_report"), \
+                    mock.patch("sys.stdout", io.StringIO()):
+                launcher.command_scan(layout, args)
+            self.assertIn("--ca-cert", captured["command"])
+            self.assertIn(str(trust_file.resolve()), captured["command"])
+
+    def test_terraform_environment_exports_ca_file(self):
+        layout = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, False)
+        env = launcher.terraform_environment(
+            layout, Path("/trusted/terraform"), ca_cert=Path("/trusted/vc.pem")
+        )
+        self.assertEqual(env["SSL_CERT_FILE"], "/trusted/vc.pem")
+        self.assertNotIn("SSL_CERT_DIR", env)
+
+    def test_windows_explicit_ca_asks_for_store_import(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "vc.pem"
+            bundle.write_text(launcher.render_pem(b"\x30" + b"a" * 200), encoding="ascii")
+            layout = launcher.Layout(root, root / "scripts", root, None, True)
+            args = argparse.Namespace(ca_cert=str(bundle))
+            with self.assertRaisesRegex(launcher.LauncherError, "Import-Certificate"):
+                launcher.terraform_ca_file(layout, args, "vc.example")
+
+    def test_windows_ignores_saved_bundle_for_terraform(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = launcher.Layout(root, root / "scripts", root, None, True)
+            trust_file = launcher.default_trust_file(layout, "vc.example")
+            trust_file.parent.mkdir(parents=True)
+            trust_file.write_text(launcher.render_pem(b"\x30" + b"a" * 200), encoding="ascii")
+            args = argparse.Namespace(ca_cert=None)
+            self.assertIsNone(launcher.terraform_ca_file(layout, args, "vc.example"))
 
 
 if __name__ == "__main__":

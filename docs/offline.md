@@ -144,6 +144,11 @@ proxy и неподдерживаемые `GOVC_*`, отключает telemetry
 и ничего не отправляет. Внешний egress всё равно закройте firewall-ом, разрешив
 только vCenter:443.
 
+Если CA внутреннего vCenter ещё не известен машине, сначала выполните
+`python3 vsphere.py trust --server <vcenter>`. Команда сверяет отпечаток,
+сохраняет CA в `.vsphere-trust/` и не требует интернета: всё скачивается с
+самого vCenter. Подробности: [python-launcher.md](python-launcher.md).
+
 Debian standalone scanner:
 
 ```sh

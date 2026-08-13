@@ -127,10 +127,42 @@ $env:VSPHERE_USER = $Credential.UserName
 $env:VSPHERE_PASSWORD = $Credential.GetNetworkCredential().Password
 ```
 
-TLS-проверка включена принудительно. Установите корпоративный CA в trust store
-машины, с которой запускается Terraform.
+TLS-проверка включена принудительно. Сертификат vCenter должен проверяться, а не
+игнорироваться. Как получить его CA, описано в следующем разделе.
 
-## 3. Сначала просканируйте весь vCenter
+## 3. Доверие к сертификату vCenter
+
+Без этого шага команды падают с `x509: certificate signed by unknown authority`.
+Выполните один раз на каждой машине и для каждого vCenter:
+
+```sh
+python3 ./vsphere.py trust --server 'incvc.inc.elara.local'
+```
+
+```powershell
+python .\vsphere.py trust --server "incvc.inc.elara.local"
+```
+
+Launcher напечатает SHA-256 сертификата vCenter и подождёт подтверждения.
+Сверьте отпечаток в vSphere Client (`Administration > Certificates > Machine SSL
+Certificate`) или в браузере. Только после подтверждения он скачивает CA с
+самого vCenter, проверяет им реальное TLS-соединение и сохраняет файл в
+`.vsphere-trust/<server>.pem`.
+
+Дальше `scan`, `plan` и `apply` берут этот CA автоматически. Флаг `--ca-cert`
+по-прежнему работает, если CA получен другим путём.
+
+На Windows Terraform читает системное хранилище, поэтому импортируйте CA один
+раз (права администратора не нужны):
+
+```powershell
+Import-Certificate -FilePath .\.vsphere-trust\incvc.inc.elara.local.pem `
+  -CertStoreLocation Cert:\CurrentUser\Root
+```
+
+Подробности и неинтерактивный режим: [docs/python-launcher.md](docs/python-launcher.md).
+
+## 4. Сначала просканируйте весь vCenter
 
 Для полного inventory назначьте отдельной учётке роль Read-only на корне
 vCenter с наследованием. Сканер запускаете вы внутри своего контура; он не
@@ -162,7 +194,7 @@ python .\vsphere.py scan `
 `windows-clone.generated.tfvars`. Полная offline-инструкция, состав отчёта и
 ограничения: [docs/discovery.md](docs/discovery.md).
 
-## 4. Безопасная проверка Terraform-подключения
+## 5. Безопасная проверка Terraform-подключения
 
 По умолчанию inventory ищет datacenter `INC`. Остальные объекты необязательны.
 
@@ -182,7 +214,7 @@ python .\vsphere.py plan --stack inventory `
 Скрипт проверяет JSON plan и завершится ошибкой, если в inventory появится хотя
 бы одно управляемое изменение.
 
-## 5. Создание Linux VM
+## 6. Создание Linux VM
 
 1. Скопируйте `stacks/vm-clones/vm-clones.tfvars.example` за пределы Git или в
    игнорируемый `.tfvars`.
@@ -216,7 +248,7 @@ python .\vsphere.py apply C:\absolute\path\to\saved.tfplan
 Любое действие `delete` блокируется wrapper-скриптами, а VM защищены
 `prevent_destroy = true`. Цели `destroy` в Makefile нет.
 
-## 6. Клон Windows 10 `tst-win-10-12`
+## 7. Клон Windows 10 `tst-win-10-12`
 
 На последней фотографии target VM называется `tst-win-10-12`. Terraform может
 использовать обычную VM как источник; импортировать или превращать её в template

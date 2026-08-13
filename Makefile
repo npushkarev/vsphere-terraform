@@ -6,16 +6,18 @@ export TF_CLI_CONFIG_FILE ?= $(TOOLS_DIR)/terraform.rc
 STACK ?= inventory
 VAR_FILE ?=
 PLAN ?=
+SERVER ?=
 SOURCE_VM ?= tst-win-10-12
 OUTPUT_DIR ?=
 CA_CERT ?=
 
-.PHONY: help install install-online check launcher scan fmt init validate plan apply offline-bundle verify-vendor
+.PHONY: help install install-online check launcher trust scan fmt init validate plan apply offline-bundle verify-vendor
 
 help:
 	@echo "make install"
 	@echo "make check"
 	@echo "make launcher"
+	@echo "make trust SERVER=incvc.inc.elara.local"
 	@echo "make scan SOURCE_VM=tst-win-10-12 OUTPUT_DIR=/private/path/vsphere-scan"
 	@echo "make fmt"
 	@echo "make init STACK=inventory"
@@ -43,6 +45,9 @@ verify-vendor:
 
 launcher:
 	python3 ./vsphere.py
+
+trust:
+	python3 ./vsphere.py trust --server "$(SERVER)"
 
 scan:
 	@set -- --source-vm "$(SOURCE_VM)"; \

@@ -64,6 +64,56 @@ python .\vsphere.py check
 toolchain отсутствует, launcher не делает fallback на `PATH`, а просит явно
 выполнить `install`.
 
+## Доверие к сертификату vCenter
+
+vCenter обычно выдаёт сертификат своего внутреннего CA. Пока этот CA неизвестен
+машине, любая команда падает с `x509: certificate signed by unknown authority`.
+Команда `trust` решает это один раз на сервер:
+
+```sh
+python3 vsphere.py trust --server incvc.inc.elara.local
+```
+
+```powershell
+python .\vsphere.py trust --server incvc.inc.elara.local
+```
+
+Что делает команда:
+
+1. Открывает TLS-соединение и печатает SHA-256 сертификата vCenter.
+2. Ждёт подтверждения отпечатка. Сверьте его по независимому каналу: vSphere
+   Client `Administration > Certificates > Machine SSL Certificate`, либо замок в
+   адресной строке браузера. Для неинтерактивного запуска передайте
+   `--expect-thumbprint`.
+3. По тому же проверенному соединению скачивает `/certs/download.zip` и
+   извлекает из него CA-сертификаты. Если архив недоступен, скачайте корневой CA
+   из vSphere Client вручную и укажите `--from-file`.
+4. Делает контрольное TLS-соединение уже с полной проверкой цепочки и имени
+   узла. Файл сохраняется только после успешной проверки.
+
+Результат лежит в `.vsphere-trust/<server>.pem` (каталог в `.gitignore`, режим
+0600). Команды `scan`, `plan` и `apply` подхватывают этот файл автоматически для
+того же адреса vCenter; `--ca-cert` по-прежнему перекрывает выбор.
+
+Пример с заранее известным отпечатком:
+
+```sh
+python3 vsphere.py trust --server incvc.inc.elara.local \
+  --expect-thumbprint AA:BB:CC:...:FF
+```
+
+На Linux launcher передаёт CA в Terraform через `SSL_CERT_FILE`. Системные
+каталоги CA при этом продолжают работать. На Windows Terraform читает системное
+хранилище, поэтому CA нужно импортировать один раз:
+
+```powershell
+Import-Certificate -FilePath .\.vsphere-trust\incvc.inc.elara.local.pem `
+  -CertStoreLocation Cert:\CurrentUser\Root
+```
+
+govc берёт CA из файла на обеих платформах, отдельный импорт для `scan` не
+нужен.
+
 ## Read-only скан
 
 Пароль можно оставить незаданным — launcher запросит его скрыто. Параметра

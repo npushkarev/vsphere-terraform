@@ -75,6 +75,16 @@ def bool_text:
   "|---|---|---|---|---:|---:|---|---|"
 ] +
 ([.inventory.virtual_machines[] | "| \(.path | cell) | \(if .template then "template" else "VM" end) | \(.power_state | cell) | \(.guest_id | cell) | \(.cpu_count | cell) | \(.memory_mb | cell) | \(.tools_status | cell) | \(.host_path | cell) |"] ) +
+(if .scope.source_vm_selector == "" then
+[
+  "",
+  "## Windows clone candidate",
+  "",
+  "No source VM was requested, so this report covers inventory only.",
+  "Rerun the scan with `--source-vm` to add clone readiness checks.",
+  ""
+]
+else
 [
   "",
   "## Windows clone candidate",
@@ -93,5 +103,6 @@ def bool_text:
   "",
   "> A scan-time `poweredOff` value is not permission to clone. Check the source again immediately before Terraform plan and apply.",
   ""
-] |
+]
+end) |
 join("\n")

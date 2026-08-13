@@ -49,8 +49,8 @@ git -C "$project_dir" check-ignore -q scan-results/validation/inventory.json || 
   echo "scan-results must be ignored by Git" >&2
   exit 1
 }
-if grep -E 'GOVC_INSECURE=(true|1)|VSPHERE_ALLOW_UNVERIFIED_SSL=(true|1)' \
-  "$project_dir/scripts/scan-vsphere.sh" >/dev/null; then
+if grep -E 'GOVC_INSECURE"?\]? *= *"?(true|1)|VSPHERE_ALLOW_UNVERIFIED_SSL' \
+  "$project_dir/vsphere.py" >/dev/null; then
   echo "scanner must not enable insecure TLS" >&2
   exit 1
 fi

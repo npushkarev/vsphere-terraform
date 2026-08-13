@@ -257,6 +257,7 @@ def relative_to($prefix):
   end
 ) as $suggested_values |
 (
+  if $source_vm == "" then [] else
   [
     {
       name: "unique_source",
@@ -305,9 +306,11 @@ def relative_to($prefix):
       message: "The source needs a system disk attached to SCSI controller 0 at unit 0."
     }
   ] end)
+  end
 ) as $readiness_checks |
 (
-  if $source_match_count == 1 then []
+  if $source_vm == "" then ["No source VM was requested; this scan reports inventory only."]
+  elif $source_match_count == 1 then []
   elif $source_match_count == 0 then ["Source VM was not visible to the supplied account."]
   else ["Source selector is ambiguous; use an exact inventory path."]
   end

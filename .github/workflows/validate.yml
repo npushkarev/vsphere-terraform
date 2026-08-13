@@ -56,7 +56,7 @@ jobs:
           HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 ALL_PROXY=http://127.0.0.1:1 \
             "$bundle_dir/install-offline.sh" --prefix "$install_dir"
           PATH="$install_dir/bin:$PATH" \
-            "$install_dir/scanner/scan-vsphere.sh" \
+            python3 "$install_dir/scanner/vsphere.py" scan \
             --fixture-dir "$GITHUB_WORKSPACE/tests/discovery/fixtures" \
             --output-dir "$RUNNER_TEMP/offline-scan" \
             --generated-at 2026-08-11T00:00:00Z
@@ -311,11 +311,12 @@ jobs:
           $env:HTTPS_PROXY = "http://127.0.0.1:1"
           $env:ALL_PROXY = "http://127.0.0.1:1"
           & (Join-Path $BundleDir "install-offline.ps1") -Prefix $InstallDir
-          & (Join-Path $InstallDir "scanner\scan-vsphere.ps1") `
-            -FixtureDir "$env:GITHUB_WORKSPACE\tests\discovery\fixtures" `
-            -OutputDirectory "$env:RUNNER_TEMP\offline-scan" `
-            -GeneratedAt "2026-08-11T00:00:00Z" `
-            -Jq (Join-Path $InstallDir "bin\jq.exe")
+          $env:Path = "$(Join-Path $InstallDir 'bin');$env:Path"
+          python (Join-Path $InstallDir "scanner\vsphere.py") scan `
+            --fixture-dir "$env:GITHUB_WORKSPACE\tests\discovery\fixtures" `
+            --output-dir "$env:RUNNER_TEMP\offline-scan" `
+            --generated-at "2026-08-11T00:00:00Z"
+          if ($LASTEXITCODE -ne 0) { throw "Offline Python scan failed." }
           python (Join-Path $InstallDir "scanner\vsphere.py") `
             report "$env:RUNNER_TEMP\offline-scan"
           if ($LASTEXITCODE -ne 0) { throw "Offline Python launcher report failed." }

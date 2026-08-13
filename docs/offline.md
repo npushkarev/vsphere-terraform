@@ -149,25 +149,7 @@ proxy и неподдерживаемые `GOVC_*`, отключает telemetry
 сохраняет CA в `.vsphere-trust/` и не требует интернета: всё скачивается с
 самого vCenter. Подробности: [python-launcher.md](python-launcher.md).
 
-Debian standalone scanner:
-
-```sh
-"$HOME/.local/share/vsphere-terraform/scanner/scan-vsphere.sh" \
-  --source-vm 'tst-win-10-12' \
-  --output-dir '/secure/path/vsphere-scan' \
-  --ca-cert '/secure/path/internal-ca.pem'
-```
-
-Windows standalone scanner:
-
-```powershell
-& "$env:LOCALAPPDATA\vsphere-terraform\scanner\scan-vsphere.ps1" `
-  -SourceVm "tst-win-10-12" `
-  -OutputDirectory "C:\Secure\vsphere-scan" `
-  -CaCert "C:\Secure\internal-ca.pem"
-```
-
-Тот же standalone scanner можно запускать единообразно через Python:
+Standalone scanner на обеих платформах запускается через Python:
 
 ```sh
 python3 "$HOME/.local/share/vsphere-terraform/scanner/vsphere.py" scan \

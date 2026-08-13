@@ -38,7 +38,7 @@ vCenter и включите наследование на дочерние об�
 проверяется всегда. Для внутреннего CA выполните один раз
 `python3 vsphere.py trust --server <vcenter>`: команда сверит отпечаток
 сертификата и сохранит CA, который `scan` подхватит сам. Готовый PEM можно
-передать напрямую через `--ca-cert`/`-CaCert`, либо установить в системный trust
+передать напрямую через `--ca-cert`, либо установить в системный trust
 store. `GOVC_INSECURE=true` и `VSPHERE_ALLOW_UNVERIFIED_SSL=true` сканер
 отклоняет.
 
@@ -125,10 +125,13 @@ python3 ./vsphere.py scan \
 unset VSPHERE_PASSWORD VSPHERE_USER VSPHERE_SERVER
 ```
 
+Уберите `--source-vm`, если нужен только полный inventory без проверок
+готовности к клонированию. Тогда `windows-clone.generated.tfvars` не создаётся.
+
 Если scanner установлен из offline bundle и репозитория на машине нет:
 
 ```sh
-"$HOME/.local/share/vsphere-terraform/scanner/scan-vsphere.sh" \
+python3 "$HOME/.local/share/vsphere-terraform/scanner/vsphere.py" scan \
   --source-vm 'tst-win-10-12' \
   --output-dir '/secure/path/vsphere-scan' \
   --ca-cert '/secure/path/internal-ca.pem'
@@ -156,7 +159,8 @@ finally {
 ```
 
 Offline scanner находится в
-`$env:LOCALAPPDATA\vsphere-terraform\scanner\scan-vsphere.ps1`.
+`$env:LOCALAPPDATA\vsphere-terraform\scanner\vsphere.py` и запускается той же
+командой `python .\vsphere.py scan`.
 
 Если source name встречается несколько раз, укажите точный inventory path,
 например `/INC/vm/Test Lab/tst-win-10-12`.
@@ -168,8 +172,9 @@ Offline scanner находится в
 - `inventory.md` — читаемый отчёт;
 - `inventory-tree.txt` — полная видимая hierarchy;
 - `inventory.json` — структурированные данные schema v1;
-- `windows-clone.generated.tfvars` — безопасная заготовка для clone stack;
-- `SHA256SUMS` — hashes четырёх файлов отчёта.
+- `windows-clone.generated.tfvars` — безопасная заготовка для clone stack,
+  создаётся только при запуске с `--source-vm`;
+- `SHA256SUMS` — hashes всех файлов отчёта.
 
 Linux создаёт каталог с mode `0700`, файлы `0600`; Windows ограничивает ACL
 текущим пользователем. Не добавляйте каталог в Git, CI artifacts, почту или

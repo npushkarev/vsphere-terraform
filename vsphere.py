@@ -35,10 +35,78 @@ REPORT_FILES = {
     "inventory.json",
     "inventory.md",
     "inventory-tree.txt",
-    "windows-clone.generated.tfvars",
 }
+# Появляется только когда скан запускали с конкретной source VM.
+OPTIONAL_REPORT_FILES = {"windows-clone.generated.tfvars"}
 STACKS = ("inventory", "vm-clones", "windows-clone")
 APPLY_STACKS = ("vm-clones", "windows-clone")
+DISCOVERY_MARKER = "discovery-normalize.jq"
+# Порядок важен: имена совпадают с --slurpfile-аргументами discovery-normalize.jq.
+COLLECT_TYPES = (
+    ("datacenters.jsonseq", "Datacenter", "d", ("name", "parent", "overallStatus")),
+    ("clusters.jsonseq", "ClusterComputeResource", "c", (
+        "name", "parent", "overallStatus", "summary.numHosts", "summary.numEffectiveHosts",
+        "summary.totalCpu", "summary.numCpuCores", "summary.totalMemory",
+    )),
+    ("compute-resources.jsonseq", "ComputeResource", "r", (
+        "name", "parent", "overallStatus", "summary.numHosts", "summary.numEffectiveHosts",
+        "summary.totalCpu", "summary.numCpuCores", "summary.totalMemory",
+    )),
+    ("hosts.jsonseq", "HostSystem", "h", (
+        "name", "parent", "overallStatus", "runtime.connectionState", "runtime.powerState",
+        "runtime.inMaintenanceMode", "summary.hardware.vendor", "summary.hardware.model",
+        "summary.hardware.cpuMhz", "summary.hardware.numCpuCores", "summary.hardware.memorySize",
+        "summary.config.product.fullName",
+    )),
+    ("resource-pools.jsonseq", "ResourcePool", "p", (
+        "name", "parent", "overallStatus", "runtime.cpu.maxUsage", "runtime.memory.maxUsage",
+    )),
+    ("datastores.jsonseq", "Datastore", "s", (
+        "name", "parent", "overallStatus", "summary.type", "summary.capacity",
+        "summary.freeSpace", "summary.accessible", "summary.maintenanceMode",
+    )),
+    ("distributed-switches.jsonseq", "DistributedVirtualSwitch", "w", (
+        "name", "parent", "overallStatus",
+    )),
+    ("networks.jsonseq", "Network", "n", ("name", "parent", "summary.accessible")),
+    ("distributed-portgroups.jsonseq", "DistributedVirtualPortgroup", "g", (
+        "name", "parent", "summary.accessible", "config.distributedVirtualSwitch",
+    )),
+    ("virtual-machines.jsonseq", "VirtualMachine", "m", (
+        "name", "parent", "runtime.powerState", "runtime.host", "resourcePool", "datastore",
+        "network", "config.template", "config.guestId", "config.hardware.numCPU",
+        "config.hardware.memoryMB", "config.version", "config.firmware",
+        "config.bootOptions.efiSecureBootEnabled", "config.flags.vbsEnabled",
+        "config.flags.vvtdEnabled", "config.nestedHVEnabled", "guest.toolsStatus",
+        "guest.toolsRunningStatus", "guest.toolsVersionStatus2", "summary.storage.committed",
+        "summary.storage.uncommitted",
+    )),
+)
+# Эти типы govc не отдаёт через -type, их собираем по каждой ссылке отдельно.
+COLLECT_EACH_TYPES = (
+    ("storage-pods.jsonseq", "StoragePod", ("name", "parent", "overallStatus")),
+    ("opaque-networks.jsonseq", "OpaqueNetwork", ("name", "parent", "summary.accessible")),
+)
+RAW_FILES = ("about.json", "objects.json", "source-devices.json") + tuple(
+    item[0] for item in COLLECT_TYPES
+) + tuple(item[0] for item in COLLECT_EACH_TYPES)
+SLURP_ARGUMENTS = (
+    ("about", "about.json"),
+    ("objects", "objects.json"),
+    ("datacenters", "datacenters.jsonseq"),
+    ("clusters", "clusters.jsonseq"),
+    ("compute_resources", "compute-resources.jsonseq"),
+    ("hosts", "hosts.jsonseq"),
+    ("resource_pools", "resource-pools.jsonseq"),
+    ("datastores", "datastores.jsonseq"),
+    ("storage_pods", "storage-pods.jsonseq"),
+    ("distributed_switches", "distributed-switches.jsonseq"),
+    ("networks", "networks.jsonseq"),
+    ("distributed_portgroups", "distributed-portgroups.jsonseq"),
+    ("opaque_networks", "opaque-networks.jsonseq"),
+    ("virtual_machines", "virtual-machines.jsonseq"),
+    ("source_devices", "source-devices.json"),
+)
 TRUST_DIR_NAME = ".vsphere-trust"
 CA_ARCHIVE_PATH = "/certs/download.zip"
 CA_ARCHIVE_LIMIT = 8 * 1024 * 1024
@@ -98,11 +166,10 @@ def discover_layout(source: Optional[Path] = None, windows: Optional[bool] = Non
     base = (source or Path(__file__)).resolve().parent
     is_windows = os.name == "nt" if windows is None else windows
     repo_scripts = base / "scripts"
-    if (repo_scripts / ("scan-vsphere.ps1" if is_windows else "scan-vsphere.sh")).is_file():
+    if (repo_scripts / DISCOVERY_MARKER).is_file():
         platform = "windows_amd64" if is_windows else "linux_amd64"
         return Layout(base, repo_scripts, base, base / ".vsphere-tools" / platform, is_windows)
-    local_scanner = base / ("scan-vsphere.ps1" if is_windows else "scan-vsphere.sh")
-    if local_scanner.is_file():
+    if (base / DISCOVERY_MARKER).is_file():
         return Layout(base, base, None, base.parent, is_windows)
     raise LauncherError("Не найден каталог scripts или установленный offline scanner.")
 
@@ -456,6 +523,19 @@ def safe_existing_file(value: str, description: str) -> Path:
     return resolved
 
 
+def safe_existing_directory(value: str) -> Path:
+    original = Path(value).expanduser()
+    if original.is_symlink():
+        raise LauncherError("Каталог не должен быть symbolic link: {}".format(original))
+    try:
+        resolved = original.resolve(strict=True)
+    except FileNotFoundError:
+        raise LauncherError("Каталог не найден: {}".format(original))
+    if not resolved.is_dir():
+        raise LauncherError("Ожидался каталог: {}".format(resolved))
+    return resolved
+
+
 def protect_private_path(path: Path, directory: bool) -> None:
     if os.name != "nt":
         path.chmod(0o700 if directory else 0o600)
@@ -746,7 +826,7 @@ def verify_report(directory_value: str) -> Tuple[Path, dict]:
         if not match or match.group(2) in entries:
             raise LauncherError("Некорректный SHA256SUMS в отчёте.")
         entries[match.group(2)] = match.group(1)
-    if set(entries) != REPORT_FILES:
+    if not REPORT_FILES <= set(entries) or not set(entries) <= (REPORT_FILES | OPTIONAL_REPORT_FILES):
         raise LauncherError("SHA256SUMS содержит неожиданный набор файлов.")
     for name, expected in entries.items():
         path = directory / name
@@ -807,9 +887,13 @@ def print_report(directory_value: str, report_format: str = "summary") -> None:
         for key, label in labels:
             print("  {:20} {}".format(label + ":", counts.get(key, 0)))
         candidate = inventory.get("clone_candidate") or {}
-        print("  Source VM: {}".format(terminal_safe(
-            candidate.get("source_vm_path") or "не найдена однозначно"
-        )))
+        selector = (inventory.get("scope") or {}).get("source_vm_selector") or ""
+        if selector:
+            print("  Source VM: {}".format(terminal_safe(
+                candidate.get("source_vm_path") or "не найдена однозначно"
+            )))
+        else:
+            print("  Source VM: не запрашивалась, отчёт только по инвентарю")
         for check in candidate.get("checks") or []:
             print("  [{:4}] {} — {}".format(
                 str(check.get("status", "?")).upper(),
@@ -1043,61 +1127,285 @@ def command_trust(layout: Layout, args: argparse.Namespace) -> None:
         )
 
 
+def govc_environment(layout: Layout, identity: Identity, ca_cert: Optional[Path]) -> Dict[str, str]:
+    env = sanitized_environment(layout)
+    env["GOVC_URL"] = "https://{}/sdk".format(identity.server)
+    env["GOVC_USERNAME"] = identity.username
+    env["GOVC_PASSWORD"] = identity.password
+    env["GOVC_TLS_CA_CERTS"] = str(ca_cert) if ca_cert else ""
+    for name in ("INSECURE", "PERSIST_SESSION", "DEBUG", "TRACE", "VERBOSE", "DUMP"):
+        env["GOVC_" + name] = "false"
+    return env
+
+
+def run_tool(
+    command: Sequence[str],
+    env: Mapping[str, str],
+    cwd: Path,
+    timeout_seconds: int,
+    label: str,
+    target: Optional[Path] = None,
+) -> bytes:
+    handle = target.open("wb") if target is not None else subprocess.PIPE
+    try:
+        result = subprocess.run(
+            list(command),
+            cwd=str(cwd),
+            env=dict(env),
+            shell=False,
+            check=False,
+            stdout=handle,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        raise LauncherError("{}: превышен тайм-аут {} с.".format(label, timeout_seconds))
+    except OSError as exc:
+        raise LauncherError("{}: не удалось запустить процесс: {}".format(label, exc))
+    finally:
+        if target is not None:
+            handle.close()
+    if result.returncode != 0:
+        message = (result.stderr or b"").decode("utf-8", errors="replace").strip()
+        raise LauncherError("{}: код {}. {}".format(label, result.returncode, terminal_safe(message)))
+    return result.stdout if target is None else b""
+
+
+def parse_inventory_objects(payload: bytes) -> List[Tuple[str, str]]:
+    try:
+        entries = json.loads(payload.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise LauncherError("govc find вернул некорректный JSON: {}".format(exc))
+    if not isinstance(entries, list):
+        raise LauncherError("govc find вернул неожиданную структуру.")
+    parsed: List[Tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, str) or "\t" not in entry or ":" not in entry:
+            continue
+        reference, path = entry.split("\t", 1)
+        parsed.append((reference, path))
+    return parsed
+
+
+def resolve_source_reference(objects: Sequence[Tuple[str, str]], selector: str) -> str:
+    wanted = selector.lstrip("/")
+    matches = []
+    for reference, path in objects:
+        if not reference.startswith("VirtualMachine:"):
+            continue
+        if path == selector or path.lstrip("/") == wanted or path.rsplit("/", 1)[-1] == selector:
+            matches.append(reference)
+    return matches[0] if len(matches) == 1 else ""
+
+
+def collect_raw_inventory(
+    govc: Path,
+    jq: Path,
+    scripts_dir: Path,
+    raw_dir: Path,
+    env: Mapping[str, str],
+    cwd: Path,
+    timeout_seconds: int,
+    source_vm: str,
+) -> None:
+    def govc_command(arguments: Sequence[str], label: str, target: Optional[Path] = None) -> bytes:
+        return run_tool([str(govc)] + list(arguments), env, cwd, timeout_seconds, label, target)
+
+    about_path = raw_dir / "about.json"
+    govc_command(["about", "-json"], "govc about", about_path)
+    try:
+        about = json.loads(about_path.read_text(encoding="utf-8"))
+        api_type = about["about"]["apiType"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+        raise LauncherError("Не удалось прочитать ответ govc about.")
+    if api_type != "VirtualCenter":
+        raise LauncherError("Указанный адрес не является vCenter Server.")
+
+    objects_path = raw_dir / "objects.json"
+    govc_command(["find", "-json", "-l", "-i", "/"], "govc find", objects_path)
+    objects = parse_inventory_objects(objects_path.read_bytes())
+    present = {reference.split(":", 1)[0] for reference, _ in objects}
+
+    for filename, object_type, type_flag, properties in COLLECT_TYPES:
+        target = raw_dir / filename
+        if object_type not in present:
+            target.write_bytes(b"")
+            continue
+        govc_command(
+            ["object.collect", "-json", "-n=0", "-type", type_flag, "/"] + list(properties),
+            "govc object.collect {}".format(object_type),
+            target,
+        )
+
+    for filename, object_type, properties in COLLECT_EACH_TYPES:
+        target = raw_dir / filename
+        lines: List[str] = []
+        for reference, _ in objects:
+            if not reference.startswith(object_type + ":"):
+                continue
+            payload = govc_command(
+                ["object.collect", "-json", "-n=0", reference] + list(properties),
+                "govc object.collect {}".format(reference),
+            )
+            try:
+                change_set = json.loads(payload.decode("utf-8"))
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise LauncherError("govc object.collect вернул некорректный JSON: {}".format(exc))
+            if not isinstance(change_set, list):
+                raise LauncherError("govc object.collect вернул не массив для {}.".format(reference))
+            object_kind, _, moid = reference.partition(":")
+            lines.append(json.dumps(
+                {"kind": "enter", "obj": {"type": object_kind, "value": moid}, "changeSet": change_set},
+                ensure_ascii=False,
+            ))
+        target.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+
+    devices_path = raw_dir / "source-devices.json"
+    source_reference = resolve_source_reference(objects, source_vm) if source_vm else ""
+    if not source_reference:
+        devices_path.write_text('{"devices":[]}\n', encoding="utf-8")
+        return
+    payload = govc_command(
+        ["device.info", "-json", "-vm", source_reference], "govc device.info"
+    )
+    # Санитайзер устройств читает stdin, поэтому идёт мимо run_tool.
+    try:
+        result = subprocess.run(
+            [str(jq), "-f", str(scripts_dir / "discovery-devices.jq")],
+            cwd=str(cwd),
+            env=dict(env),
+            shell=False,
+            check=False,
+            input=payload,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise LauncherError("Не удалось очистить device.info: {}".format(exc))
+    if result.returncode != 0:
+        raise LauncherError("Очистка device.info завершилась с кодом {}.".format(result.returncode))
+    devices_path.write_bytes(result.stdout)
+
+
+def render_reports(
+    jq: Path,
+    scripts_dir: Path,
+    raw_dir: Path,
+    stage_dir: Path,
+    env: Mapping[str, str],
+    cwd: Path,
+    timeout_seconds: int,
+    server: str,
+    source_vm: str,
+    generated_at: str,
+    govc_version: str,
+    jq_version: str,
+) -> List[str]:
+    for name in RAW_FILES:
+        if not (raw_dir / name).is_file():
+            raise LauncherError("Нет входного файла discovery: {}".format(name))
+    arguments = [
+        str(jq), "-n",
+        "--arg", "generated_at", generated_at,
+        "--arg", "server", server,
+        "--arg", "source_vm", source_vm,
+        "--arg", "govc_version", govc_version,
+        "--arg", "jq_version", jq_version,
+    ]
+    for variable, filename in SLURP_ARGUMENTS:
+        arguments += ["--slurpfile", variable, str(raw_dir / filename)]
+    arguments += ["-f", str(scripts_dir / "discovery-normalize.jq")]
+    inventory = stage_dir / "inventory.json"
+    run_tool(arguments, env, cwd, timeout_seconds, "jq discovery-normalize.jq", inventory)
+    run_tool(
+        [str(jq), "-e", "-f", str(scripts_dir / "discovery-validate.jq"), str(inventory)],
+        env, cwd, timeout_seconds, "jq discovery-validate.jq", stage_dir / ".validate.json",
+    )
+    (stage_dir / ".validate.json").unlink()
+    run_tool(
+        [str(jq), "-r", "-f", str(scripts_dir / "discovery-report.jq"), str(inventory)],
+        env, cwd, timeout_seconds, "jq discovery-report.jq", stage_dir / "inventory.md",
+    )
+    run_tool(
+        [str(jq), "-r", "-f", str(scripts_dir / "discovery-tree.jq"), str(inventory)],
+        env, cwd, timeout_seconds, "jq discovery-tree.jq", stage_dir / "inventory-tree.txt",
+    )
+    produced = ["inventory.json", "inventory.md", "inventory-tree.txt"]
+    if source_vm:
+        run_tool(
+            [str(jq), "-r", "-f", str(scripts_dir / "discovery-tfvars.jq"), str(inventory)],
+            env, cwd, timeout_seconds, "jq discovery-tfvars.jq",
+            stage_dir / "windows-clone.generated.tfvars",
+        )
+        produced.append("windows-clone.generated.tfvars")
+    lines = [
+        "{}  {}".format(sha256_file(stage_dir / name), name) for name in produced
+    ]
+    (stage_dir / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    for item in stage_dir.iterdir():
+        protect_private_path(item, directory=False)
+    return produced
+
+
 def command_scan(layout: Layout, args: argparse.Namespace) -> None:
-    identity = collect_identity(args)
-    govc = verified_tool(layout, "govc")
+    fixture_dir = safe_existing_directory(args.fixture_dir) if args.fixture_dir else None
     jq = verified_tool(layout, "jq")
+    govc = None if fixture_dir else verified_tool(layout, "govc")
+    identity = None if fixture_dir else collect_identity(args)
+    server = identity.server if identity else "fixture.vcenter.invalid"
     output = Path(args.output_dir).expanduser().resolve() if args.output_dir else default_scan_output(layout)
     if output.exists():
         raise LauncherError("Каталог результата уже существует: {}".format(output))
-    ca_cert = (
-        safe_existing_file(args.ca_cert, "CA certificate")
-        if args.ca_cert
-        else stored_trust_file(layout, identity.server)
-    )
-    source_vm = args.source_vm.strip()
-    if not source_vm:
-        raise LauncherError("Source VM не задана.")
-    arguments: List[str]
-    if layout.windows:
-        arguments = [
-            "-SourceVm", source_vm,
-            "-OutputDirectory", str(output),
-            "-Govc", str(govc),
-            "-Jq", str(jq),
-        ]
-        if ca_cert:
-            arguments += ["-CaCert", str(ca_cert)]
-        arguments += ["-CommandTimeoutSeconds", str(min(args.timeout_seconds, 3600))]
-    else:
-        arguments = [
-            "--source-vm", source_vm,
-            "--output-dir", str(output),
-            "--govc", str(govc),
-            "--jq", str(jq),
-        ]
-        if ca_cert:
-            arguments += ["--ca-cert", str(ca_cert)]
+    if output.parent.is_symlink():
+        raise LauncherError("Родительский каталог результата не должен быть symbolic link.")
+    ca_cert = None
+    if identity is not None:
+        ca_cert = (
+            safe_existing_file(args.ca_cert, "CA certificate")
+            if args.ca_cert
+            else stored_trust_file(layout, identity.server)
+        )
+    source_vm = (args.source_vm or "").strip()
+    generated_at = args.generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    scripts_dir = layout.scripts_dir
+    cwd = layout.repo_root or layout.base_dir
     print("READ ONLY scan")
-    print("  vCenter: {}".format(identity.server))
-    print("  Учётная запись: {}".format(identity.username))
-    print("  Source VM: {}".format(source_vm))
+    print("  vCenter: {}".format(server))
+    if identity is not None:
+        print("  Учётная запись: {}".format(identity.username))
+    print("  Source VM: {}".format(source_vm if source_vm else "не задана, полный inventory"))
     print("  Результат: {}".format(output))
     print("  CA: {}".format(ca_cert if ca_cert else "системный trust store"))
-    env = sanitized_environment(layout, identity)
+    output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stage_dir = Path(tempfile.mkdtemp(prefix=".vsphere-scan.", dir=str(output.parent)))
+    raw_dir = Path(tempfile.mkdtemp(prefix="vsphere-scan-raw."))
+    env = sanitized_environment(layout)
     try:
-        run_process(
-            wrapper_command(layout, "scan-vsphere", arguments),
-            env,
-            layout.repo_root or layout.base_dir,
-            args.timeout_seconds,
+        if fixture_dir is not None:
+            raw_source = fixture_dir
+        else:
+            raw_source = raw_dir
+            try:
+                collect_raw_inventory(
+                    govc, jq, scripts_dir, raw_dir,
+                    govc_environment(layout, identity, ca_cert),
+                    cwd, args.timeout_seconds, source_vm,
+                )
+            except LauncherError:
+                if ca_cert is None:
+                    print(certificate_hint(identity.server), file=sys.stderr)
+                raise
+        render_reports(
+            jq, scripts_dir, raw_source, stage_dir, env, cwd, args.timeout_seconds,
+            server, source_vm, generated_at,
+            read_pin(layout, ".govc-version") or "", read_pin(layout, ".jq-version") or "",
         )
-    except LauncherError:
-        if ca_cert is None:
-            print(certificate_hint(identity.server), file=sys.stderr)
-        raise
+        protect_private_path(stage_dir, directory=True)
+        os.replace(str(stage_dir), str(output))
     finally:
-        env.pop("VSPHERE_PASSWORD", None)
+        shutil.rmtree(str(raw_dir), ignore_errors=True)
+        shutil.rmtree(str(stage_dir), ignore_errors=True)
     print_report(str(output), "summary")
 
 
@@ -1289,9 +1597,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = subparsers.add_parser("scan", help="выполнить полный read-only scan")
     add_identity_options(scan)
-    scan.add_argument("--source-vm", default="tst-win-10-12")
+    scan.add_argument("--source-vm", default=None, help="без значения scan собирает только inventory")
     scan.add_argument("--output-dir")
     scan.add_argument("--ca-cert")
+    scan.add_argument("--fixture-dir", help="локальные raw-файлы вместо vCenter (только тесты)")
+    scan.add_argument("--generated-at", help="фиксированная метка времени (только тесты)")
     scan.add_argument("--timeout-seconds", type=int, default=3600)
 
     report = subparsers.add_parser("report", help="проверить и показать отчёт")
@@ -1391,8 +1701,10 @@ def interactive_menu(layout: Layout) -> int:
                     "scan",
                     "--server", menu_prompt("vCenter", os.environ.get("VSPHERE_SERVER", "")),
                     "--user", menu_prompt("Учётная запись", os.environ.get("VSPHERE_USER", "")),
-                    "--source-vm", menu_prompt("Source VM", "tst-win-10-12"),
                 ]
+                source_vm = menu_prompt("Source VM (пусто = только inventory)")
+                if source_vm:
+                    command += ["--source-vm", source_vm]
                 output = menu_prompt("Каталог результата", str(default_scan_output(layout)))
                 ca_cert = menu_prompt("CA PEM (пусто = сохранённый CA или системный trust store)")
                 command += ["--output-dir", output]

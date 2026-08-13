@@ -81,12 +81,12 @@ $DiscoveryTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vsphere-disco
 $DiscoveryOutput = Join-Path $DiscoveryTestRoot "result with spaces"
 New-Item -ItemType Directory -Path $DiscoveryTestRoot | Out-Null
 try {
-    & (Join-Path $ProjectDir "scripts\scan-vsphere.ps1") `
-        -FixtureDir (Join-Path $ProjectDir "tests\discovery\fixtures") `
-        -SourceVm "tst-win-10-12" `
-        -OutputDirectory $DiscoveryOutput `
-        -GeneratedAt "2026-08-11T00:00:00Z" `
-        -Jq $Jq
+    & python (Join-Path $ProjectDir "vsphere.py") scan `
+        --fixture-dir (Join-Path $ProjectDir "tests\discovery\fixtures") `
+        --source-vm "tst-win-10-12" `
+        --output-dir $DiscoveryOutput `
+        --generated-at "2026-08-11T00:00:00Z"
+    if ($LASTEXITCODE -ne 0) { throw "Discovery fixture scan failed." }
 
     $InventoryText = [System.IO.File]::ReadAllText(
         (Join-Path $DiscoveryOutput "inventory.json"),
@@ -152,18 +152,21 @@ try {
         throw "Discovery result directory inherited unexpected ACL rules."
     }
 
-    $RejectedExistingOutput = $false
-    try {
-        & (Join-Path $ProjectDir "scripts\scan-vsphere.ps1") `
-            -FixtureDir (Join-Path $ProjectDir "tests\discovery\fixtures") `
-            -OutputDirectory $DiscoveryOutput `
-            -GeneratedAt "2026-08-11T00:00:00Z" `
-            -Jq $Jq
+    & python (Join-Path $ProjectDir "vsphere.py") scan `
+        --fixture-dir (Join-Path $ProjectDir "tests\discovery\fixtures") `
+        --output-dir $DiscoveryOutput `
+        --generated-at "2026-08-11T00:00:00Z"
+    if ($LASTEXITCODE -eq 0) { throw "Scanner overwrote an existing result directory." }
+
+    $InventoryOnlyOutput = Join-Path $DiscoveryTestRoot "inventory only"
+    & python (Join-Path $ProjectDir "vsphere.py") scan `
+        --fixture-dir (Join-Path $ProjectDir "tests\discovery\fixtures") `
+        --output-dir $InventoryOnlyOutput `
+        --generated-at "2026-08-11T00:00:00Z"
+    if ($LASTEXITCODE -ne 0) { throw "Inventory-only fixture scan failed." }
+    if (Test-Path -LiteralPath (Join-Path $InventoryOnlyOutput "windows-clone.generated.tfvars")) {
+        throw "Inventory-only scan must not emit clone tfvars."
     }
-    catch {
-        $RejectedExistingOutput = $true
-    }
-    if (-not $RejectedExistingOutput) { throw "Scanner overwrote an existing result directory." }
 }
 finally {
     Remove-Item -LiteralPath $DiscoveryTestRoot -Recurse -Force -ErrorAction SilentlyContinue

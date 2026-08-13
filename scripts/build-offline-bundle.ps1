@@ -60,8 +60,6 @@ foreach ($Installer in @(
     )) {
     Copy-Item -LiteralPath (Join-Path $ProjectDir "scripts\$Installer") -Destination $Stage
 }
-Copy-Item -LiteralPath (Join-Path $ProjectDir "scripts\scan-vsphere.ps1") `
-    -Destination (Join-Path $Stage "scanner")
 Copy-Item -LiteralPath (Join-Path $ProjectDir "vsphere.py") `
     -Destination (Join-Path $Stage "scanner")
 foreach ($FilterName in @(

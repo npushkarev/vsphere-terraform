@@ -30,8 +30,8 @@ Provider зафиксирован строго на `2.15.1`: это после�
 - `stacks/windows-clone` — один full clone Windows VM с Sysprep.
 - `modules/linux-vm-clone` — модуль клонирования с `prevent_destroy = true`.
 - `scripts` — установка, проверка, plan/apply и offline bundle.
-- `scripts/scan-vsphere.*` — полный read-only discovery для Debian/Windows.
-- `vsphere.py` — единое интерактивное меню для Debian/Windows.
+- `scripts/discovery-*.jq` — контракт нормализации и проверки inventory.
+- `vsphere.py` — меню, read-only сканер и обёртки Terraform для Debian/Windows.
 - `vendor` — Terraform, govc, jq и vSphere provider для обеих x64-платформ.
 
 ## 1. Закрытый контур: установка без интернета
@@ -193,6 +193,9 @@ python .\vsphere.py scan `
 Результат содержит Markdown-отчёт, дерево, JSON и безопасную заготовку
 `windows-clone.generated.tfvars`. Полная offline-инструкция, состав отчёта и
 ограничения: [docs/discovery.md](docs/discovery.md).
+
+`--source-vm` необязателен. Без него скан собирает весь видимый inventory и не
+создаёт заготовку tfvars: это режим «сначала посмотреть, что вообще есть».
 
 ## 5. Безопасная проверка Terraform-подключения
 

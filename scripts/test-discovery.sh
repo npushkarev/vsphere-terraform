@@ -7,12 +7,17 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 jq_bin=${JQ_BIN:-jq}
 tf_bin=${TF_BIN:-terraform}
+python_bin=${PYTHON_BIN:-python3}
 fixture_dir="$project_dir/tests/discovery/fixtures"
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/vsphere-discovery-test.XXXXXX")
 cleanup() {
   rm -rf -- "$tmp_dir"
 }
 trap cleanup EXIT HUP INT TERM
+
+scan() {
+  "$python_bin" -B "$project_dir/vsphere.py" scan "$@"
+}
 
 output_dir="$tmp_dir/result with spaces"
 "$jq_bin" -f "$script_dir/discovery-devices.jq" \
@@ -21,12 +26,11 @@ if grep -E 'SECRET|macAddress|backing' "$tmp_dir/safe-devices.json" >/dev/null; 
   echo "device sanitizer retained a private field" >&2
   exit 1
 fi
-"$script_dir/scan-vsphere.sh" \
+scan \
   --fixture-dir "$fixture_dir" \
   --source-vm tst-win-10-12 \
   --output-dir "$output_dir" \
-  --generated-at 2026-08-11T00:00:00Z \
-  --jq "$jq_bin" >/dev/null
+  --generated-at 2026-08-11T00:00:00Z >/dev/null
 
 "$jq_bin" -e '
   .schema_version == "1.0.0" and
@@ -73,12 +77,11 @@ cp -R "$fixture_dir" "$negative_fixture"
 "$jq_bin" '(.devices[] | select(.type | endswith("SCSIController")) | .busNumber) = 1' \
   "$fixture_dir/source-devices.json" > "$negative_fixture/source-devices.json"
 negative_output="$tmp_dir/negative-result"
-"$script_dir/scan-vsphere.sh" \
+scan \
   --fixture-dir "$negative_fixture" \
   --source-vm tst-win-10-12 \
   --output-dir "$negative_output" \
-  --generated-at 2026-08-11T00:00:00Z \
-  --jq "$jq_bin" >/dev/null
+  --generated-at 2026-08-11T00:00:00Z >/dev/null
 "$jq_bin" -e '
   .clone_candidate.checks[] |
   select(.name == "system_disk_scsi_0_0") |
@@ -113,13 +116,39 @@ grep -F 'source_powered_off_acknowledgement = ""' \
   fi
 )
 
-if "$script_dir/scan-vsphere.sh" \
+if scan \
   --fixture-dir "$fixture_dir" \
   --output-dir "$output_dir" \
-  --generated-at 2026-08-11T00:00:00Z \
-  --jq "$jq_bin" >/dev/null 2>&1; then
+  --generated-at 2026-08-11T00:00:00Z >/dev/null 2>&1; then
   echo "scanner overwrote an existing result directory" >&2
   exit 1
 fi
+
+inventory_only_output="$tmp_dir/inventory only"
+scan \
+  --fixture-dir "$fixture_dir" \
+  --output-dir "$inventory_only_output" \
+  --generated-at 2026-08-11T00:00:00Z >/dev/null
+if [ -e "$inventory_only_output/windows-clone.generated.tfvars" ]; then
+  echo "inventory-only scan must not emit clone tfvars" >&2
+  exit 1
+fi
+"$jq_bin" -e '
+  .scope.source_vm_selector == "" and
+  .counts.virtual_machines == 1 and
+  .clone_candidate.match_count == 0 and
+  (.clone_candidate.checks | length) == 0 and
+  (.clone_candidate.warnings | length) == 1
+' "$inventory_only_output/inventory.json" >/dev/null
+"$jq_bin" -e -f "$script_dir/discovery-validate.jq" \
+  "$inventory_only_output/inventory.json" >/dev/null
+(
+  cd "$inventory_only_output"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -c SHA256SUMS >/dev/null
+  else
+    shasum -a 256 -c SHA256SUMS >/dev/null
+  fi
+)
 
 echo "vSphere discovery fixture tests passed"

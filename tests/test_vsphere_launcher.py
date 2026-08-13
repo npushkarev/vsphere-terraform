@@ -26,8 +26,17 @@ class LauncherTestCase(unittest.TestCase):
         scripts = root / "scripts"
         scripts.mkdir(parents=True)
         extension = ".ps1" if windows else ".sh"
-        for name in ("scan-vsphere", "plan", "apply-reviewed-plan", "install-repo-offline"):
+        for name in ("plan", "apply-reviewed-plan", "install-repo-offline"):
             (scripts / (name + extension)).write_text("# test\n", encoding="utf-8")
+        for filter_name in (
+            "discovery-normalize.jq",
+            "discovery-validate.jq",
+            "discovery-report.jq",
+            "discovery-tree.jq",
+            "discovery-tfvars.jq",
+            "discovery-devices.jq",
+        ):
+            (scripts / filter_name).write_text("# test\n", encoding="utf-8")
         for stack in launcher.STACKS:
             stack_dir = root / "stacks" / stack
             stack_dir.mkdir(parents=True)
@@ -40,6 +49,37 @@ class LauncherTestCase(unittest.TestCase):
         module_dir.mkdir(parents=True)
         (module_dir / "main.tf").write_text("resource \"null_resource\" \"test\" {}\n", encoding="utf-8")
         return launcher.Layout(root, scripts, root, None, windows)
+
+    def scan_args(self, output: Path, source_vm=None, fixture_dir=None):
+        return argparse.Namespace(
+            server="vc.example",
+            user="reader",
+            source_vm=source_vm,
+            output_dir=str(output),
+            ca_cert=None,
+            fixture_dir=fixture_dir,
+            generated_at="2026-08-11T00:00:00Z",
+            timeout_seconds=60,
+        )
+
+    def write_report_payload(self, directory: Path, with_tfvars: bool = True):
+        payloads = {
+            "inventory.json": '{"schema_version": "1.0.0", "read_only": true, '
+                              '"scope": {"source_vm_selector": ""}, '
+                              '"counts": {"datacenters": 1, "clusters": 0, "hosts": 0, "datastores": 0, '
+                              '"storage_pods": 0, "networks": 0, "virtual_machines": 0, "templates": 0}, '
+                              '"clone_candidate": {"checks": []}}\n',
+            "inventory.md": "# report\n",
+            "inventory-tree.txt": "/INC\n",
+        }
+        if with_tfvars:
+            payloads["windows-clone.generated.tfvars"] = 'source_vm_name = "x"\n'
+        lines = []
+        for name, content in payloads.items():
+            data = content.encode("utf-8")
+            (directory / name).write_bytes(data)
+            lines.append("{}  {}".format(hashlib.sha256(data).hexdigest(), name))
+        (directory / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def make_report(self, root: Path) -> Path:
         root.mkdir()
@@ -56,6 +96,7 @@ class LauncherTestCase(unittest.TestCase):
                 "virtual_machines": 6,
                 "templates": 1,
             },
+            "scope": {"source_vm_selector": "tst-win-10-12"},
             "clone_candidate": {
                 "source_vm_path": "/DC/vm/tst-win-10-12",
                 "checks": [{"name": "unique_source", "status": "pass", "message": "ok"}],
@@ -173,7 +214,7 @@ class LayoutAndCommandTests(LauncherTestCase):
         with tempfile.TemporaryDirectory() as temporary:
             layout = self.make_repo(Path(temporary))
             hostile = "VM name; $(touch NO) & more"
-            command = launcher.wrapper_command(layout, "scan-vsphere", ["--source-vm", hostile])
+            command = launcher.wrapper_command(layout, "plan", ["--var-file", hostile])
             self.assertEqual(command[0], "/bin/sh")
             self.assertEqual(command[-1], hostile)
             self.assertEqual(command.count(hostile), 1)
@@ -209,132 +250,128 @@ class LayoutAndCommandTests(LauncherTestCase):
         self.assertEqual(env["VSPHERE_PASSWORD"], "PASSWORD-SENTINEL")
         self.assertEqual(env["CHECKPOINT_DISABLE"], "1")
 
-    def test_scan_password_is_only_in_child_environment(self):
+    def test_scan_password_reaches_govc_only_through_the_environment(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             layout = self.make_repo(root)
             output = root / "result with spaces"
-            args = argparse.Namespace(
-                server="vc.example",
-                user="reader",
-                source_vm="VM ; & | $()",
-                output_dir=str(output),
-                ca_cert=None,
-                timeout_seconds=60,
-            )
             identity = launcher.Identity("vc.example", "reader", "PASSWORD-SENTINEL")
             captured = {}
 
-            def fake_run(command, env, cwd, timeout):
-                captured["command"] = command
+            def fake_collect(govc, jq, scripts_dir, raw_dir, env, cwd, timeout, source_vm):
                 captured["env"] = dict(env)
+                captured["source_vm"] = source_vm
+
+            def fake_render(jq, scripts_dir, raw_dir, stage_dir, env, cwd, timeout,
+                            server, source_vm, generated_at, govc_version, jq_version):
+                captured["render_env"] = dict(env)
+                self.write_report_payload(stage_dir)
+                return ["inventory.json"]
 
             with mock.patch.object(launcher, "collect_identity", return_value=identity), \
                     mock.patch.object(launcher, "verified_tool", return_value=Path("/trusted/tool")), \
-                    mock.patch.object(launcher, "run_process", side_effect=fake_run), \
-                    mock.patch.object(launcher, "print_report"), \
+                    mock.patch.object(launcher, "collect_raw_inventory", side_effect=fake_collect), \
+                    mock.patch.object(launcher, "render_reports", side_effect=fake_render), \
                     mock.patch("sys.stdout", io.StringIO()):
-                launcher.command_scan(layout, args)
-            self.assertNotIn("PASSWORD-SENTINEL", "\n".join(captured["command"]))
-            self.assertEqual(captured["env"]["VSPHERE_PASSWORD"], "PASSWORD-SENTINEL")
-            self.assertIn("VM ; & | $()", captured["command"])
+                launcher.command_scan(layout, self.scan_args(output, source_vm="VM ; & | $()"))
 
-    def test_standalone_scan_dispatches_real_wrapper_without_secret_in_argv(self):
+            self.assertEqual(captured["env"]["GOVC_PASSWORD"], "PASSWORD-SENTINEL")
+            self.assertEqual(captured["env"]["GOVC_INSECURE"], "false")
+            self.assertNotIn("VSPHERE_PASSWORD", captured["render_env"])
+            self.assertEqual(captured["source_vm"], "VM ; & | $()")
+            self.assertTrue((output / "inventory.json").is_file())
+
+    def test_govc_environment_pins_ca_and_refuses_insecure_tls(self):
+        layout = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, False)
+        identity = launcher.Identity("vc.example", "reader", "PASSWORD-SENTINEL")
+        hostile = {"GOVC_INSECURE": "true", "GOVC_PASSWORD": "OTHER-SECRET"}
+        with mock.patch.dict(os.environ, hostile, clear=False):
+            env = launcher.govc_environment(layout, identity, Path("/trusted/vc.pem"))
+        self.assertEqual(env["GOVC_URL"], "https://vc.example/sdk")
+        self.assertEqual(env["GOVC_PASSWORD"], "PASSWORD-SENTINEL")
+        self.assertEqual(env["GOVC_TLS_CA_CERTS"], str(Path("/trusted/vc.pem")))
+        for name in ("INSECURE", "PERSIST_SESSION", "DEBUG", "TRACE", "VERBOSE", "DUMP"):
+            self.assertEqual(env["GOVC_" + name], "false")
+
+    def test_scan_without_source_vm_asks_for_inventory_only(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            prefix = root / "installed prefix with spaces"
-            scanner = prefix / "scanner"
-            scanner.mkdir(parents=True)
-            source_report = self.make_report(root / "source report")
-            output = root / "scan result"
-            argv_log = root / "argv.log"
-            password_marker = root / "password-ok"
-            source_file = scanner / "vsphere.py"
-            source_file.write_text("# layout marker\n", encoding="utf-8")
-            for name, value in (
-                (".terraform-version", "1.15.8\n"),
-                (".govc-version", "0.55.1\n"),
-                (".jq-version", "1.8.2\n"),
-            ):
-                (scanner / name).write_text(value, encoding="utf-8")
+            layout = self.make_repo(root)
+            output = root / "inventory only"
+            identity = launcher.Identity("vc.example", "reader", "SECRET")
+            captured = {}
 
-            if os.name == "nt":
-                wrapper = scanner / "scan-vsphere.ps1"
-                quote = lambda value: str(value).replace("'", "''")
-                wrapper.write_text(
-                    """param(
-    [string]$SourceVm,
-    [string]$OutputDirectory,
-    [string]$Govc,
-    [string]$Jq,
-    [int]$CommandTimeoutSeconds
-)
-if ($env:VSPHERE_PASSWORD -cne 'PASSWORD-SENTINEL') {{ exit 71 }}
-if ($env:OS -cne 'Windows_NT') {{ exit 72 }}
-if ($env:TF_CLI_ARGS_apply -or $env:GOVC_PASSWORD -or $env:HTTPS_PROXY) {{ exit 73 }}
-[IO.File]::WriteAllLines('{log}', @($SourceVm, $OutputDirectory, $Govc, $Jq))
-[IO.File]::WriteAllText('{marker}', 'ok')
-Copy-Item -Recurse -LiteralPath '{source}' -Destination $OutputDirectory
-""".format(
-                        log=quote(argv_log), marker=quote(password_marker), source=quote(source_report)
-                    ),
-                    encoding="utf-8",
-                )
-            else:
-                wrapper = scanner / "scan-vsphere.sh"
-                wrapper.write_text(
-                    """#!/bin/sh
-set -eu
-[ "${{VSPHERE_PASSWORD:-}}" = PASSWORD-SENTINEL ] || exit 71
-[ -z "${{TF_CLI_ARGS_apply:-}}${{GOVC_PASSWORD:-}}${{HTTPS_PROXY:-}}" ] || exit 72
-: > {log}
-for argument in "$@"; do printf '%s\n' "$argument" >> {log}; done
-output=
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --output-dir) output=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-printf ok > {marker}
-cp -R {source} "$output"
-""".format(
-                        log=shlex.quote(str(argv_log)),
-                        marker=shlex.quote(str(password_marker)),
-                        source=shlex.quote(str(source_report)),
-                    ),
-                    encoding="utf-8",
-                )
-                wrapper.chmod(0o700)
+            def fake_render(jq, scripts_dir, raw_dir, stage_dir, env, cwd, timeout,
+                            server, source_vm, generated_at, govc_version, jq_version):
+                captured["source_vm"] = source_vm
+                captured["generated_at"] = generated_at
+                self.write_report_payload(stage_dir, with_tfvars=False)
+                return ["inventory.json"]
 
-            layout = launcher.discover_layout(source_file, windows=(os.name == "nt"))
-            identity = launcher.Identity("vc.example", "reader", "PASSWORD-SENTINEL")
-            args = argparse.Namespace(
-                server="vc.example",
-                user="reader",
-                source_vm="VM name ; & | $()",
-                output_dir=str(output),
-                ca_cert=None,
-                timeout_seconds=60,
-            )
-            hostile = {
-                "TF_CLI_ARGS_apply": "-auto-approve",
-                "GOVC_PASSWORD": "INHERITED-SECRET",
-                "HTTPS_PROXY": "http://proxy.invalid",
-            }
-            printed = io.StringIO()
-            with mock.patch.dict(os.environ, hostile, clear=False), \
-                    mock.patch.object(launcher, "collect_identity", return_value=identity), \
-                    mock.patch.object(launcher, "verified_tool", return_value=Path(sys.executable)), \
-                    mock.patch.object(launcher.sys, "stdout", printed):
-                launcher.command_scan(layout, args)
+            with mock.patch.object(launcher, "collect_identity", return_value=identity), \
+                    mock.patch.object(launcher, "verified_tool", return_value=Path("/trusted/tool")), \
+                    mock.patch.object(launcher, "collect_raw_inventory"), \
+                    mock.patch.object(launcher, "render_reports", side_effect=fake_render), \
+                    mock.patch("sys.stdout", io.StringIO()):
+                launcher.command_scan(layout, self.scan_args(output))
 
-            self.assertTrue(password_marker.is_file())
-            self.assertTrue((output / "inventory.json").is_file())
-            arguments = argv_log.read_text(encoding="utf-8")
-            self.assertNotIn("PASSWORD-SENTINEL", arguments)
-            self.assertIn("VM name ; & | $()", arguments)
-            self.assertIn("Контрольные суммы", printed.getvalue())
+            self.assertEqual(captured["source_vm"], "")
+            self.assertEqual(captured["generated_at"], "2026-08-11T00:00:00Z")
+            self.assertFalse((output / "windows-clone.generated.tfvars").exists())
+
+    def test_fixture_scan_never_touches_vcenter(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = self.make_repo(root)
+            fixtures = root / "fixtures"
+            fixtures.mkdir()
+            output = root / "fixture result"
+
+            def fake_render(jq, scripts_dir, raw_dir, stage_dir, env, cwd, timeout,
+                            server, source_vm, generated_at, govc_version, jq_version):
+                self.assertEqual(raw_dir, fixtures.resolve())
+                self.assertEqual(server, "fixture.vcenter.invalid")
+                self.write_report_payload(stage_dir, with_tfvars=False)
+                return ["inventory.json"]
+
+            with mock.patch.object(launcher, "collect_identity") as identity_mock, \
+                    mock.patch.object(launcher, "verified_tool", return_value=Path("/trusted/tool")), \
+                    mock.patch.object(launcher, "collect_raw_inventory") as collect_mock, \
+                    mock.patch.object(launcher, "render_reports", side_effect=fake_render), \
+                    mock.patch("sys.stdout", io.StringIO()):
+                launcher.command_scan(layout, self.scan_args(output, fixture_dir=str(fixtures)))
+
+            identity_mock.assert_not_called()
+            collect_mock.assert_not_called()
+
+    def test_scan_refuses_an_existing_result_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = self.make_repo(root)
+            output = root / "already there"
+            output.mkdir()
+            with mock.patch.object(launcher, "verified_tool", return_value=Path("/trusted/tool")), \
+                    mock.patch.object(launcher, "collect_identity",
+                                      return_value=launcher.Identity("vc.example", "reader", "SECRET")), \
+                    mock.patch.object(launcher, "collect_raw_inventory") as collect_mock:
+                with self.assertRaisesRegex(launcher.LauncherError, "уже существует"):
+                    launcher.command_scan(layout, self.scan_args(output))
+            collect_mock.assert_not_called()
+
+    def test_source_reference_needs_exactly_one_match(self):
+        objects = [
+            ("VirtualMachine:vm-1", "/INC/vm/Test Lab/tst-win-10-12"),
+            ("VirtualMachine:vm-2", "/INC/vm/Other/tst-win-10-12"),
+            ("VirtualMachine:vm-3", "/INC/vm/Other/unique-vm"),
+            ("Folder:group-1", "/INC/vm/Test Lab"),
+        ]
+        self.assertEqual(launcher.resolve_source_reference(objects, "unique-vm"), "VirtualMachine:vm-3")
+        self.assertEqual(
+            launcher.resolve_source_reference(objects, "/INC/vm/Test Lab/tst-win-10-12"),
+            "VirtualMachine:vm-1",
+        )
+        self.assertEqual(launcher.resolve_source_reference(objects, "tst-win-10-12"), "")
+        self.assertEqual(launcher.resolve_source_reference(objects, "Test Lab"), "")
 
 
 class ReportTests(LauncherTestCase):
@@ -647,29 +684,24 @@ class TrustTests(LauncherTestCase):
             trust_file = launcher.default_trust_file(layout, "vc.example")
             trust_file.parent.mkdir(parents=True)
             trust_file.write_text(launcher.render_pem(b"\x30" + b"a" * 200), encoding="ascii")
-            args = argparse.Namespace(
-                server="vc.example",
-                user="reader",
-                source_vm="tst-win-10-12",
-                output_dir=str(root / "result"),
-                ca_cert=None,
-                timeout_seconds=60,
-            )
             identity = launcher.Identity("vc.example", "reader", "SECRET")
             captured = {}
 
+            def fake_collect(govc, jq, scripts_dir, raw_dir, env, cwd, timeout, source_vm):
+                captured["ca"] = env["GOVC_TLS_CA_CERTS"]
+
+            def fake_render(jq, scripts_dir, raw_dir, stage_dir, env, cwd, timeout,
+                            server, source_vm, generated_at, govc_version, jq_version):
+                self.write_report_payload(stage_dir, with_tfvars=False)
+                return ["inventory.json"]
+
             with mock.patch.object(launcher, "collect_identity", return_value=identity), \
                     mock.patch.object(launcher, "verified_tool", return_value=Path("/trusted/tool")), \
-                    mock.patch.object(
-                        launcher,
-                        "run_process",
-                        side_effect=lambda command, env, cwd, timeout: captured.update(command=list(command)),
-                    ), \
-                    mock.patch.object(launcher, "print_report"), \
+                    mock.patch.object(launcher, "collect_raw_inventory", side_effect=fake_collect), \
+                    mock.patch.object(launcher, "render_reports", side_effect=fake_render), \
                     mock.patch("sys.stdout", io.StringIO()):
-                launcher.command_scan(layout, args)
-            self.assertIn("--ca-cert", captured["command"])
-            self.assertIn(str(trust_file.resolve()), captured["command"])
+                launcher.command_scan(layout, self.scan_args(root / "result"))
+            self.assertEqual(captured["ca"], str(trust_file.resolve()))
 
     def test_terraform_environment_exports_ca_file(self):
         layout = launcher.Layout(Path("/tmp"), Path("/tmp"), None, None, False)

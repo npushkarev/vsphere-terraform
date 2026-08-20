@@ -213,11 +213,91 @@ cat /mnt/etc/astra/build_version
 
 ## Развёртывание
 
-Загрузка OVA в vSphere:
+### Подготовка окружения
+
+Инструменты и доверие к сертификату vCenter настраиваются один раз на машине.
+
+Windows:
+
+```powershell
+cd $HOME\vsphere-terraform
+python .\vsphere.py install
+python .\vsphere.py trust --server incvc.inc.elara.local
+$env:Path = "$PWD\.vsphere-tools\windows_amd64\bin;$env:Path"
+
+$env:GOVC_URL          = 'https://incvc.inc.elara.local/sdk'
+$Credential            = Get-Credential -Message 'vCenter'
+$env:GOVC_USERNAME     = $Credential.UserName
+$env:GOVC_PASSWORD     = $Credential.GetNetworkCredential().Password
+$env:GOVC_TLS_CA_CERTS = "$PWD\.vsphere-trust\incvc.inc.elara.local.pem"
+$env:GOVC_DATACENTER   = 'INC'
+
+govc about
+```
+
+Debian и Astra:
 
 ```sh
-govc import.spec <образ>.ova > ova.json
-# в ova.json задайте Name, NetworkMapping и DiskProvisioning
+cd ~/vsphere-terraform
+python3 ./vsphere.py install
+python3 ./vsphere.py trust --server incvc.inc.elara.local
+export PATH="$PWD/.vsphere-tools/linux_amd64/bin:$PATH"
+
+export GOVC_URL='https://incvc.inc.elara.local/sdk'
+export GOVC_USERNAME='<учётная-запись>'
+read -r -s -p 'Пароль vCenter: ' GOVC_PASSWORD; export GOVC_PASSWORD; printf '\n'
+export GOVC_TLS_CA_CERTS="$PWD/.vsphere-trust/incvc.inc.elara.local.pem"
+export GOVC_DATACENTER='INC'
+
+govc about
+```
+
+`govc about` должен вернуть версию vCenter. Если он падает на сертификате,
+значит шаг `trust` не выполнен. Отключать проверку TLS не нужно.
+
+### Куда класть машину
+
+Точные имена берутся из отчёта скана, гадать не надо:
+
+```sh
+govc ls /INC/vm
+govc ls /INC/datastore
+govc ls /INC/network
+govc ls /INC/host
+```
+
+### Параметры импорта
+
+`govc import.spec <образ>.ova` печатает заготовку. Для этих образов она
+предсказуемая: свойств OVF внутри нет, сеть в дескрипторе одна и называется
+`VM Network`. Готовый `ova.json`:
+
+```json
+{
+  "DiskProvisioning": "thin",
+  "IPAllocationPolicy": "dhcpPolicy",
+  "IPProtocol": "IPv4",
+  "PropertyMapping": null,
+  "NetworkMapping": [
+    {
+      "Name": "VM Network",
+      "Network": "<ИМЯ-ПОРТГРУППЫ>"
+    }
+  ],
+  "MarkAsTemplate": false,
+  "PowerOn": false,
+  "InjectOvfEnv": false,
+  "WaitForIP": false,
+  "Name": "<ИМЯ-ВМ>"
+}
+```
+
+Поле `Name` в блоке `NetworkMapping` это имя сети внутри OVF, его менять не
+надо. Меняется только `Network`, это имя портгруппы в вашем vCenter.
+
+### Импорт
+
+```sh
 govc import.ova -options=ova.json \
   -folder='<ПАПКА>' \
   -ds='<DATASTORE>' \
@@ -225,16 +305,42 @@ govc import.ova -options=ova.json \
   <образ>.ova
 ```
 
-Provider `vmware/vsphere` 2.15.1 умеет то же самое декларативно через блок
+Загрузка идёт с той машины, где лежит файл, поэтому запускать команду надо там
+же, куда скачан образ.
+
+Через vSphere Client то же самое делается мастером `Deploy OVF Template` с
+выбором `Local file`. Результат одинаковый, но браузер грузит 725 МиБ медленнее
+и не даёт повторяемости.
+
+Provider `vmware/vsphere` 2.15.1 умеет импорт декларативно, через блок
 `ovf_deploy` ресурса `vsphere_virtual_machine`. Это работает только через
 vCenter, напрямую к ESXi подключаться нельзя.
 
-Диск в образе 16 ГБ. Для рабочей машины его расширяют до включения:
+### После импорта
+
+Образ приходит с 2 vCPU, 2 ГБ RAM и диском 16 ГБ. Для рабочей машины это мало,
+правится до первого включения:
 
 ```sh
-govc vm.disk.change -vm '<ИМЯ_VM>' -disk.label 'Hard disk 1' -size 60G
-govc vm.change -vm '<ИМЯ_VM>' -c 4 -m 8192
+govc vm.change -vm '<ИМЯ-ВМ>' -c 4 -m 8192
+govc vm.disk.change -vm '<ИМЯ-ВМ>' -disk.label 'Hard disk 1' -size 60G
+govc vm.power -on '<ИМЯ-ВМ>'
+govc vm.info '<ИМЯ-ВМ>'
 ```
 
-Внутри гостя после загрузки останется растянуть раздел `sda2` и файловую
-систему.
+Дальше консоль открывается из vSphere Client, либо ссылкой от
+`govc vm.console -vm '<ИМЯ-ВМ>'`. Вход `astra/astra`.
+
+Первые действия внутри гостя:
+
+```sh
+passwd
+cat /etc/astra/build_version
+sudo parted -s /dev/sda resizepart 2 100%
+sudo resize2fs /dev/sda2
+```
+
+Пакета `cloud-guest-utils` в образе нет, поэтому привычного `growpart` там не
+будет, пока не подключен репозиторий. `parted` растягивает последний раздел на
+живой системе, ядро подхватывает новый размер сразу. Если не подхватило,
+хватит перезагрузки.

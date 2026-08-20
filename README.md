@@ -220,6 +220,9 @@ python .\vsphere.py plan --stack inventory `
 
 ## 6. Создание Linux VM
 
+Откуда взять сам образ Astra Linux, что в нём лежит и как проверить сборку до
+переноса в контур: [docs/astra-image.md](docs/astra-image.md).
+
 1. Скопируйте `stacks/vm-clones/vm-clones.tfvars.example` за пределы Git или в
    игнорируемый `.tfvars`.
 2. Укажите реальные cluster, datastore, network, template и folder.

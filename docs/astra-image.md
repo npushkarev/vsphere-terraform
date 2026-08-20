@@ -38,6 +38,47 @@ alse-1.8-max-vsphere-latest-amd64.ova
 | 1.8.5 Орёл | <https://registry.astralinux.ru/images/alse/vsphere/alse-1.8.5-base-vsphere-mg16.4.0-amd64.ova> |
 | Самая свежая 1.8 Смоленск | <https://registry.astralinux.ru/images/alse/vsphere/alse-1.8-max-vsphere-latest-amd64.ova> |
 
+### Скриптом
+
+В репозитории есть `scripts/get-astra-image.py`. Он сам находит нужный файл в
+каталоге, скачивает его и сверяет SHA-256 с опубликованной. Нужен Python 3.9+,
+устанавливать ничего не надо.
+
+Windows:
+
+```powershell
+python .\scripts\get-astra-image.py --version 1.8.5 --level max --output-dir C:\Images
+```
+
+Debian и Astra:
+
+```sh
+python3 scripts/get-astra-image.py --version 1.8.5 --level max --output-dir /srv/images
+```
+
+Уровень задаётся как `base` (Орёл), `adv` (Воронеж) или `max` (Смоленск).
+Посмотреть, что вообще есть в каталоге:
+
+```powershell
+python .\scripts\get-astra-image.py --list
+```
+
+Полезные детали:
+
+- без `--build` берётся самая свежая сборка нужной версии, конкретную можно
+  закрепить через `--build mg16.4.0`;
+- `--image <имя файла>` скачивает точно указанный файл;
+- прерванная загрузка продолжается с места обрыва при повторном запуске;
+- если файл уже скачан и его сумма верна, скрипт ничего не делает;
+- при несовпадении суммы файл переименовывается в `.bad`, код возврата 1;
+- `--base-url` переключает источник на внутреннее зеркало, когда образ уже
+  выложен в закрытом контуре.
+
+За прокси скрипт берёт стандартные переменные окружения `HTTPS_PROXY` и
+`HTTP_PROXY`.
+
+### Руками
+
 Контрольная сумма лежит рядом с образом, к имени файла добавляется `.sha256`.
 Скачивание на машине с интернетом, Debian или Astra:
 

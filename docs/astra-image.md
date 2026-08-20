@@ -26,6 +26,49 @@ alse-1.8-max-vsphere-latest-amd64.ova
 Сам OVA в этот репозиторий не кладётся. Он весит около 725 МиБ, а GitHub не
 принимает файлы больше 100 МиБ без LFS. Храните образ во внутреннем реестре.
 
+## Как скачать
+
+Прямые ссылки на образы, проверенные для этой работы:
+
+| Что | Ссылка |
+|---|---|
+| Каталог всех образов vSphere | <https://registry.astralinux.ru/images/alse/vsphere/> |
+| 1.8.5 Смоленск, сборка 1.8.5.46 | <https://registry.astralinux.ru/images/alse/vsphere/alse-1.8.5-max-vsphere-mg16.4.0-amd64.ova> |
+| 1.8.5 Воронеж | <https://registry.astralinux.ru/images/alse/vsphere/alse-1.8.5-adv-vsphere-mg16.4.0-amd64.ova> |
+| 1.8.5 Орёл | <https://registry.astralinux.ru/images/alse/vsphere/alse-1.8.5-base-vsphere-mg16.4.0-amd64.ova> |
+| Самая свежая 1.8 Смоленск | <https://registry.astralinux.ru/images/alse/vsphere/alse-1.8-max-vsphere-latest-amd64.ova> |
+
+Контрольная сумма лежит рядом с образом, к имени файла добавляется `.sha256`.
+Скачивание на машине с интернетом, Debian или Astra:
+
+```sh
+BASE='https://registry.astralinux.ru/images/alse/vsphere'
+IMAGE='alse-1.8.5-max-vsphere-mg16.4.0-amd64.ova'
+
+curl -fL -O "$BASE/$IMAGE"
+curl -fsSL "$BASE/$IMAGE.sha256" > "$IMAGE.sha256"
+echo "$(cat "$IMAGE.sha256")  $IMAGE" | sha256sum -c -
+```
+
+Windows PowerShell:
+
+```powershell
+$Base  = 'https://registry.astralinux.ru/images/alse/vsphere'
+$Image = 'alse-1.8.5-max-vsphere-mg16.4.0-amd64.ova'
+
+Invoke-WebRequest "$Base/$Image" -OutFile $Image
+$Expected = (Invoke-WebRequest "$Base/$Image.sha256").Content.Trim()
+$Actual   = (Get-FileHash $Image -Algorithm SHA256).Hash.ToLower()
+if ($Actual -ne $Expected) { throw "SHA-256 не совпал" }
+```
+
+Скачивать нужно один раз. Дальше образ переносится в контур утверждённым
+каналом и кладётся во внутренний реестр, чтобы второй раз его не тащить.
+Контрольную сумму передавайте отдельно от самого файла.
+
+Файл `.sha256` содержит только сам хеш, без имени файла. Поэтому в команде
+проверки имя подставляется вручную, как в примере выше.
+
 ## Что проверено в `alse-1.8.5-max-vsphere-mg16.4.0-amd64.ova`
 
 Проверка выполнена 2026-08-20 на локальной машине. Образ распакован и прочитан
